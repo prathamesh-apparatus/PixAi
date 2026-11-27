@@ -9,7 +9,7 @@
 .anim-zoom { animation: zoomIn 0.45s cubic-bezier(0.4, 0, 0.2, 1) both; }
 .anim-toast { animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1) both; }
 .skeleton {
-  background: linear-gradient(90deg, #211710 25%, #38260f 50%, #211710 75%);
+  background: linear-gradient(90deg, #151619 25%, #23252c 50%, #151619 75%);
   background-size: 800px 100%;
   animation: shimmer 1.4s infinite linear;
 }

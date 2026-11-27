@@ -8,7 +8,7 @@ const EXAMPLES = [
   'Festive Diwali social media creative, marigold flowers and brass diyas on a deep navy background, elegant gold typography space at the top, premium look.',
 ];
 
-export default function PromptEditor({ value, onChange, history }) {
+export default function PromptEditor({ value, onChange, history, compact = false }) {
   const toast = useToast();
   const [showExamples, setShowExamples] = useState(false);
   return (
@@ -21,7 +21,7 @@ export default function PromptEditor({ value, onChange, history }) {
           <button className="btn-ghost !px-2 !py-1 !text-xs" onClick={() => setShowExamples((s) => !s)}><Lightbulb size={13} /> Examples</button>
         </div>
       </div>
-      <textarea className="input min-h-[110px] resize-y" placeholder="Describe the image you want to create..."
+      <textarea className={`input resize-y ${compact ? 'min-h-[72px]' : 'min-h-[110px]'}`} placeholder="Describe the image you want to create..."
         value={value} onChange={(e) => onChange(e.target.value)} maxLength={4000} />
       <div className="flex justify-between mt-1">
         <div className="text-[11px] text-mute">
