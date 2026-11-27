@@ -34,5 +34,7 @@
 .gem-twinkle { animation: gemTwinkle 5.6s ease-in-out infinite; }
 @keyframes hueSpin { to { filter: hue-rotate(360deg); } }
 .gem-hue { animation: hueSpin 8s linear infinite; }
+@keyframes zigWave { 0%, 100% { transform: translateY(11px); } 50% { transform: translateY(-11px); } }
+.gen-zig { animation: zigWave 1.7s ease-in-out infinite; }
 .img-hover { transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
 .group:hover .img-hover { transform: scale(1.045); }

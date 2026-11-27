@@ -14,29 +14,21 @@ export default function ImagePreview({ record, onRegenerate, onFavoriteChanged, 
   useEffect(() => { setFav(!!(record && record.favorite)); }, [record]);
 
   if (busy) {
-    // Google Gemini-style generating visual (Ray's ask): the four-point AI
-    // sparkle in a blue→violet→pink gradient, slowly rotating and softly
-    // scaling while its colours cycle — all long, eased motions, nothing
-    // bouncy or vibrating — over a breathing glow, with a smooth progress bar.
+    // Ray's pick: colourful dots travelling up and down in a zigzag wave.
+    // Kept smooth — a slow eased sine-style wave with staggered phases,
+    // not a sharp bounce — over a soft glow, with the gradient progress bar.
+    const DOTS = ['#ffc107', '#ff5252', '#f472b6', '#7c4dff', '#40c4ff', '#69f0ae', '#fb923c'];
     return (
       <div className="card h-full min-h-[380px] flex flex-col items-center justify-center text-center p-6 overflow-hidden relative">
-        <div className="relative w-[104px] h-[104px] flex items-center justify-center">
-          <span className="gen-breathe absolute inset-0 rounded-full" style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.28), rgba(47,123,255,0.12) 55%, transparent 72%)' }} />
-          <div className="gem-hue relative">
-            <svg className="gem-twinkle block" width="62" height="62" viewBox="0 0 48 48" style={{ filter: 'drop-shadow(0 8px 22px rgba(139,92,246,0.55))' }}>
-              <defs>
-                <linearGradient id="gem-g" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stopColor="#38bdf8" />
-                  <stop offset="0.5" stopColor="#8b5cf6" />
-                  <stop offset="1" stopColor="#f472b6" />
-                </linearGradient>
-              </defs>
-              <path d="M24 3 C25.8 15.5 32.5 22.2 45 24 C32.5 25.8 25.8 32.5 24 45 C22.2 32.5 15.5 25.8 3 24 C15.5 22.2 22.2 15.5 24 3 Z" fill="url(#gem-g)" />
-            </svg>
-          </div>
+        <span className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(420px 220px at 50% 42%, rgba(124,58,237,0.13), transparent 70%)' }} />
+        <div className="relative flex items-center gap-[9px] h-12">
+          {DOTS.map((c, i) => (
+            <span key={i} className="gen-zig block w-3 h-3 rounded-full"
+              style={{ background: c, animationDelay: `${i * 0.14}s`, boxShadow: `0 5px 16px ${c}59, inset 0 1px 0 rgba(255,255,255,0.45)` }} />
+          ))}
         </div>
-        <p className="mt-5 font-semibold text-sm">Generating your image…</p>
-        {statusText && <p className="mt-1 text-xs text-mute">{statusText}</p>}
+        <p className="mt-5 font-semibold text-sm relative">Generating your image…</p>
+        {statusText && <p className="mt-1 text-xs text-mute relative">{statusText}</p>}
         <div className="w-56 h-1.5 rounded-full bg-panel2 overflow-hidden mt-5 relative">
           <div className="gen-bar absolute inset-y-0 w-1/2 rounded-full" style={{ background: 'linear-gradient(90deg,#38bdf8,#8b5cf6,#f472b6)' }} />
         </div>
