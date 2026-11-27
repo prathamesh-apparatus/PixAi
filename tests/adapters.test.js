@@ -5,6 +5,7 @@ const { OpenRouterAdapter } = require('../electron/adapters/openrouter-adapter')
 const { OpenAICompatibleAdapter } = require('../electron/adapters/openai-compatible-adapter');
 const { NvidiaAdapter } = require('../electron/adapters/nvidia-adapter');
 const { resolveAdapter } = require('../electron/adapters/registry');
+const { mapHttpError } = require('../electron/adapters/base-adapter');
 const { PNG_1PX } = require('./workbook-helper');
 
 function fakeFetch(handler) {
@@ -66,6 +67,52 @@ describe('cloudflare adapter', () => {
     const a = new CloudflareAdapter();
     expect(a.supportsNegativePrompt(model)).toBe(false);
     expect(a.supportsNegativePrompt({ vendorModelId: '@cf/stabilityai/stable-diffusion-xl-base-1.0' })).toBe(true);
+  });
+  it('FLUX.2 models are sent as multipart/form-data with a "steps" field (Cloudflare docs)', async () => {
+    let seenOpts = null;
+    const fetchImpl = fakeFetch(async (url, opts) => {
+      seenOpts = opts;
+      return res({ ctype: 'application/json', body: Buffer.alloc(0), jsonBody: { result: { image: PNG_1PX.toString('base64') } } });
+    });
+    const out = await new CloudflareAdapter().generate({
+      provider, model: { vendorModelId: '@cf/black-forest-labs/flux-2-dev' },
+      apiKey: 'tok', prompt: 'a cycle', settings: { aspectRatio: '1:1', steps: 20, seed: 5 }, fetchImpl,
+    });
+    expect(seenOpts.body).toBeInstanceOf(FormData);
+    expect(seenOpts.body.get('prompt')).toBe('a cycle');
+    expect(seenOpts.body.get('steps')).toBe('20');
+    expect(seenOpts.body.get('width')).toBe('1024');
+    expect(seenOpts.headers['Content-Type']).toBeUndefined(); // FormData sets it
+    expect(out[0].buffer.equals(PNG_1PX)).toBe(true);
+  });
+  it('non-FLUX.2 models keep the JSON body with num_steps', async () => {
+    let seenOpts = null;
+    const fetchImpl = fakeFetch(async (url, opts) => { seenOpts = opts; return res({ body: PNG_1PX }); });
+    await new CloudflareAdapter().generate({ provider, model, apiKey: 'tok', prompt: 'x', settings: { steps: 4 }, fetchImpl });
+    expect(JSON.parse(seenOpts.body).num_steps).toBe(4);
+    expect(seenOpts.headers['Content-Type']).toBe('application/json');
+  });
+});
+
+describe('free-tier error handling', () => {
+  it('402 maps to QUOTA_EXHAUSTED with free-limit wording', () => {
+    const e = mapHttpError(402, '{"error":{"message":"Insufficient credits"}}');
+    expect(e.code).toBe('QUOTA_EXHAUSTED');
+    expect(e.message).toMatch(/Free limit ended/);
+  });
+  it('a Cloudflare free-allocation (neurons) error at HTTP 400 maps to QUOTA_EXHAUSTED', () => {
+    const e = mapHttpError(400, JSON.stringify({ errors: [{ code: 4006, message: 'You have used up your daily free allocation of 10,000 neurons' }], success: false }));
+    expect(e.code).toBe('QUOTA_EXHAUSTED');
+    expect(e.diagnostic).toContain('neurons');
+  });
+  it('an OpenRouter free-models-per-day 429 maps to QUOTA_EXHAUSTED, a plain 429 stays RATE_LIMITED', () => {
+    expect(mapHttpError(429, '{"error":{"message":"Rate limit exceeded: free-models-per-day"}}').code).toBe('QUOTA_EXHAUSTED');
+    expect(mapHttpError(429, '{"error":{"message":"Too many requests"}}').code).toBe('RATE_LIMITED');
+  });
+  it('a plain 400 keeps the provider detail', () => {
+    const e = mapHttpError(400, '{"error":{"message":"prompt is required"}}');
+    expect(e.code).toBe('INVALID_REQUEST');
+    expect(e.message).toContain('prompt is required');
   });
 });
 

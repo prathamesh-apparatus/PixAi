@@ -33,6 +33,9 @@ export default function ModelSelector({ provider, value, onChange }) {
           {provider.adapterSupported === false && (
             <p className="text-xs text-amber-300">This provider's adapter is not implemented yet — its configuration is imported, but generation needs a new adapter module.</p>
           )}
+          {selected.testState === 'quota-exhausted' && (
+            <p className="text-xs text-amber-300">Free limit ended for this model — it can't generate until the provider's free quota resets. Pick another model above.</p>
+          )}
         </div>
       )}
       {provider && models.length === 0 && (

@@ -12,9 +12,9 @@ const ITEMS = [
 export default function Sidebar({ page, onNavigate, collapsed, onToggle }) {
   return (
     <aside className={`flex flex-col bg-navy transition-all duration-300 ${collapsed ? 'w-[72px]' : 'w-60'}`}>
-      <div className="flex items-center gap-3 px-4 h-[72px]">
-        <div className="w-10 h-10 flex items-center justify-center shrink-0 text-white font-black text-lg"
-          style={{ background: 'linear-gradient(135deg,#8b5cf6,#3f7dff)', borderRadius: 14, boxShadow: '0 8px 22px rgba(124,108,255,0.45)' }}>
+      <div className="flex items-center gap-3 px-4 h-16">
+        <div className="w-9 h-9 flex items-center justify-center shrink-0 text-white font-black"
+          style={{ background: 'linear-gradient(135deg,#ffb020,#f95d00)', borderRadius: 12, boxShadow: '0 8px 22px rgba(255,122,26,0.5), inset 0 1px 0 rgba(255,255,255,0.4)' }}>
           P
         </div>
         {!collapsed && (
@@ -27,18 +27,18 @@ export default function Sidebar({ page, onNavigate, collapsed, onToggle }) {
       <nav className="flex-1 py-2 px-3 space-y-1.5 overflow-y-auto">
         {ITEMS.map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => onNavigate(key)} title={label}
-            className={`w-full flex items-center gap-3 px-3.5 py-3 text-sm ${page === key ? 'text-white shadow-glow' : 'text-slate-300 hover:bg-panel hover:text-white hover:translate-x-0.5'}`}
+            className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-sm ${page === key ? 'text-white shadow-glow' : 'text-amber-100/70 hover:bg-panel hover:text-white hover:translate-x-0.5'}`}
             style={page === key
-              ? { borderRadius: 16, background: 'linear-gradient(120deg, rgba(139,92,246,0.9), rgba(63,125,255,0.85))' }
-              : { borderRadius: 16 }}>
-            <Icon size={19} className={page === key ? 'text-white' : 'text-mute'} />
+              ? { borderRadius: 14, background: 'linear-gradient(120deg, rgba(255,176,32,0.95), rgba(249,93,0,0.92))' }
+              : { borderRadius: 14 }}>
+            <Icon size={18} className={page === key ? 'text-white' : 'text-mute'} />
             {!collapsed && <span className="truncate font-medium">{label}</span>}
           </button>
         ))}
       </nav>
       <div className="p-3">
         {!collapsed && (
-          <div className="px-3.5 py-3 text-[11px] leading-relaxed text-mute" style={{ borderRadius: 16, background: '#14141e' }}>
+          <div className="px-3.5 py-3 text-[11px] leading-relaxed text-mute" style={{ borderRadius: 14, background: '#211710' }}>
             Providers & models come from your Excel workbook. Update it any time with:<br />
             <span className="text-slate-300 font-mono text-[10.5px]">npm run import -- .\FabrixAPI1.xlsx</span>
           </div>

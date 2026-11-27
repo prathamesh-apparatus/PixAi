@@ -49,7 +49,7 @@ export function testStateBadge(state) {
     case 'tested-ok': return { label: 'Tested successfully', cls: 'badge-ok' };
     case 'auth-failed': return { label: 'Authentication failed', cls: 'badge-bad' };
     case 'rate-limited': return { label: 'Rate limited', cls: 'badge-warn' };
-    case 'quota-exhausted': return { label: 'Quota exhausted', cls: 'badge-warn' };
+    case 'quota-exhausted': return { label: 'Free limit ended', cls: 'badge-warn' };
     case 'model-not-found': return { label: 'Model not found', cls: 'badge-bad' };
     default: return { label: 'Not tested', cls: 'badge-mute' };
   }

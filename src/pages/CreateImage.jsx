@@ -80,7 +80,7 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
   const stage = stageRecord || result;
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[380px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)_290px] gap-5 items-start">
-      <div className="card p-5 space-y-5 lg:sticky lg:top-0 lg:max-h-[calc(100vh-130px)] lg:overflow-y-auto">
+      <div className="card p-4 space-y-4 lg:sticky lg:top-0 lg:max-h-[calc(100vh-118px)] lg:overflow-y-auto">
         <ProviderSelector providers={providers} value={providerId} onChange={(v) => { setProviderId(v); setModelId(''); }} />
         <ModelSelector provider={provider} value={modelId} onChange={setModelId} />
         <PromptEditor value={prompt} onChange={setPrompt} history={recent} />
@@ -126,7 +126,7 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
           {recent.slice(0, 5).map((r) => (
             <button key={r.id} onClick={() => setStageRecord(r)} className="block w-full text-left group">
               <div className="overflow-hidden" style={{ borderRadius: 16 }}>
-                <img src={api.imageUrl(r.image_path)} alt={r.prompt} className="w-full h-32 object-cover img-hover" loading="lazy" />
+                <img src={api.imageUrl(r.image_path)} alt={r.prompt} className="w-full h-24 object-cover img-hover" loading="lazy" />
               </div>
               <div className="flex items-center gap-2 mt-1.5 px-0.5">
                 <span className="text-xs font-medium truncate flex-1">{r.model_name}</span>

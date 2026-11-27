@@ -10,16 +10,26 @@ class AdapterError extends Error {
   }
 }
 
+const QUOTA_RE = /quota|free allocation|neurons|insufficient (credit|balance|funds)|out of credits|credits? exhausted|daily (free )?limit|free-models-per-(day|min)|per-day limit|usage limit reached/i;
+
 function mapHttpError(status, bodyText) {
   let detail = '';
   try {
     const j = JSON.parse(bodyText);
-    detail = (j.error && (j.error.message || j.error.code)) || j.message || j.msg || '';
+    detail = (j.error && (j.error.message || j.error.code)) ||
+      (Array.isArray(j.errors) && j.errors[0] && (j.errors[0].message || String(j.errors[0].code || ''))) ||
+      j.message || j.msg || '';
   } catch { detail = String(bodyText || '').slice(0, 200); }
   const diag = `HTTP ${status}${detail ? `: ${detail}` : ''}`;
-  if (status === 401 || status === 403) return new AdapterError('Authentication failed — the API key for this provider was rejected. Check the key in Provider Settings.', { code: 'AUTH_FAILED', status, diagnostic: diag });
-  if (status === 429) return new AdapterError('Rate limit exceeded for this provider. Wait a moment and try again.', { code: 'RATE_LIMITED', status, diagnostic: diag });
-  if (status === 402) return new AdapterError('Insufficient balance / quota exhausted for this provider account.', { code: 'QUOTA_EXHAUSTED', status, diagnostic: diag });
+  if (status === 401 || status === 403) return new AdapterError('Authentication failed — the API key for this provider was rejected. Check the key in the workbook / Provider Settings.', { code: 'AUTH_FAILED', status, diagnostic: diag });
+  // Free-tier handling: these providers run on free quotas. When the free
+  // limit ends (HTTP 402, or a quota message at any status) the model cannot
+  // generate anything until the quota resets — say exactly that, and mark the
+  // model "quota-exhausted" (generation service maps this code to that state).
+  if (status === 402 || QUOTA_RE.test(detail)) {
+    return new AdapterError('Free limit ended for this model — the provider account is out of free quota/credits, so it cannot generate images right now. Switch to another model or provider, or wait for the free quota to reset.', { code: 'QUOTA_EXHAUSTED', status, diagnostic: diag });
+  }
+  if (status === 429) return new AdapterError('Rate limit hit on this free-tier API — too many requests in a short time. Wait about a minute and try again; if it keeps happening, the free daily limit may be over.', { code: 'RATE_LIMITED', status, diagnostic: diag });
   if (status === 404) return new AdapterError('Model not found at this provider. The vendor model ID may have changed — re-import the workbook.', { code: 'MODEL_NOT_FOUND', status, diagnostic: diag });
   if (status === 400) return new AdapterError(`The provider rejected the request: ${detail || 'invalid parameters'}`, { code: 'INVALID_REQUEST', status, diagnostic: diag });
   if (status >= 500) return new AdapterError('The provider is unavailable right now (server error). Try again later.', { code: 'PROVIDER_UNAVAILABLE', status, diagnostic: diag });

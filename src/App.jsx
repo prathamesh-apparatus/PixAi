@@ -29,11 +29,10 @@ function Shell() {
   }), [toast]);
 
   const regenerate = (record) => { setPrefill(record); setPage('create'); };
-  const firstProvider = (config.providers || [])[0];
 
   return (
     <MainLayout page={page} onNavigate={setPage} collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)}
-      providerName={firstProvider && firstProvider.name} modelName="" version={version}>
+      providerName="" modelName="" version={version}>
       {!isDesktop && (
         <div className="border border-line bg-panel px-4 py-2.5 text-xs text-mute mb-4" style={{ borderRadius: 14 }}>
           Browser preview mode — run the desktop app for generation and history.

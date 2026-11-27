@@ -10,6 +10,12 @@ const { BaseAdapter, AdapterError, mapHttpError, fetchWithTimeout } = require('.
  * Account ID column or from the Base URL — it is never invented.
  * Responses: binary image bytes, or JSON { result: { image: <base64> } } (FLUX.2 etc.),
  * or JSON { result: <base64> } depending on the model.
+ *
+ * FLUX.2 models (flux-2-dev, flux-2-klein-*) are the exception: per Cloudflare's
+ * own docs they accept ONLY multipart/form-data — even for a prompt-only call —
+ * with fields prompt/steps/width/height/seed/guidance. A JSON body gets HTTP 400
+ * "invalid parameters" (the exact error seen in the app), so those models are
+ * sent as FormData. All other models keep the JSON body.
  */
 class CloudflareAdapter extends BaseAdapter {
   constructor() { super(); this.id = 'cloudflare'; this.displayName = 'Cloudflare Workers AI'; }
@@ -22,6 +28,9 @@ class CloudflareAdapter extends BaseAdapter {
     ];
     if (/flux/.test(mid) && !/schnell/.test(mid)) {
       caps.push({ key: 'steps', label: 'Steps', type: 'number', min: 1, max: 50, default: 20 });
+    }
+    if (/flux-2/.test(mid)) {
+      caps.push({ key: 'guidance', label: 'Guidance scale', type: 'number', min: 0, max: 20, default: 3.5 });
     }
     if (/sdxl|stable-diffusion/.test(mid)) {
       caps.push({ key: 'steps', label: 'Steps', type: 'number', min: 1, max: 20, default: 20 });
@@ -51,20 +60,39 @@ class CloudflareAdapter extends BaseAdapter {
     return { '1:1': [1024, 1024], '16:9': [1344, 768], '9:16': [768, 1344], '4:3': [1152, 896], '3:4': [896, 1152] }[aspect] || [1024, 1024];
   }
 
+  isMultipartModel(model) {
+    return /flux-2/.test((model && model.vendorModelId) || '');
+  }
+
   async generate({ provider, model, apiKey, prompt, negativePrompt, settings = {}, fetchImpl = fetch, signal, timeoutMs }) {
     if (!apiKey) throw new AdapterError('No API key saved for this provider. Import a workbook with the key or add it in Provider Settings.', { code: 'AUTH_FAILED' });
     const url = this.buildUrl(provider, model);
     const [width, height] = this.sizeFor(settings.aspectRatio);
-    const body = { prompt, width, height };
-    if (settings.seed !== '' && settings.seed != null) body.seed = Number(settings.seed);
-    if (settings.steps) body.num_steps = Number(settings.steps);
-    if (settings.guidance) body.guidance = Number(settings.guidance);
-    if (negativePrompt && this.supportsNegativePrompt(model)) body.negative_prompt = negativePrompt;
-    const res = await fetchWithTimeout(fetchImpl, url, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }, timeoutMs, signal);
+    let fetchOptions;
+    if (this.isMultipartModel(model)) {
+      // FLUX.2: multipart/form-data only (Cloudflare docs) — field is "steps",
+      // not the JSON API's "num_steps". FormData sets the Content-Type itself.
+      const form = new FormData();
+      form.append('prompt', prompt);
+      form.append('width', String(width));
+      form.append('height', String(height));
+      if (settings.steps) form.append('steps', String(Number(settings.steps)));
+      if (settings.seed !== '' && settings.seed != null) form.append('seed', String(Number(settings.seed)));
+      if (settings.guidance) form.append('guidance', String(Number(settings.guidance)));
+      fetchOptions = { method: 'POST', headers: { Authorization: `Bearer ${apiKey}` }, body: form };
+    } else {
+      const body = { prompt, width, height };
+      if (settings.seed !== '' && settings.seed != null) body.seed = Number(settings.seed);
+      if (settings.steps) body.num_steps = Number(settings.steps);
+      if (settings.guidance) body.guidance = Number(settings.guidance);
+      if (negativePrompt && this.supportsNegativePrompt(model)) body.negative_prompt = negativePrompt;
+      fetchOptions = {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      };
+    }
+    const res = await fetchWithTimeout(fetchImpl, url, fetchOptions, timeoutMs, signal);
     const ctype = res.headers.get('content-type') || '';
     if (!res.ok) throw mapHttpError(res.status, await res.text());
     if (ctype.includes('application/json')) {

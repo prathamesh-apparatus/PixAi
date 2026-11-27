@@ -69,7 +69,7 @@ function setupWatcher(settingsManager) {
 function createWindow() {
   win = new BrowserWindow({
     width: 1500, height: 950, minWidth: 1100, minHeight: 700,
-    backgroundColor: '#08080d',
+    backgroundColor: '#140d08',
     autoHideMenuBar: true,
     title: 'PixAi — AI Creative Studio',
     webPreferences: {
