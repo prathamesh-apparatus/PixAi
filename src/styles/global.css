@@ -1,0 +1,43 @@
+@import './animations.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  font-family: Inter, 'Segoe UI', system-ui, sans-serif;
+  background: #0b0e17;
+  color: #e6eaf2;
+  -webkit-font-smoothing: antialiased;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #26304d; border-radius: 8px; border: 2px solid #0b0e17; }
+::-webkit-scrollbar-track { background: transparent; }
+
+.glass { background: rgba(21, 27, 48, 0.72); backdrop-filter: blur(10px); }
+.card { @apply bg-panel border border-line rounded-2xl shadow-card; }
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 font-semibold text-white transition-all;
+  background: linear-gradient(135deg, #7c5cff 0%, #3b82f6 100%);
+}
+.btn-primary:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
+.btn-primary:active:not(:disabled) { transform: translateY(0); }
+.btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 border border-line bg-panel2 text-sm text-slate-200 transition-all hover:border-accent hover:text-white; }
+.btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+.input { @apply w-full rounded-xl bg-navy border border-line px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-mute outline-none transition-colors focus:border-accent; }
+select.input { appearance: none; }
+.label { @apply block text-xs font-semibold uppercase tracking-wider text-mute mb-1.5; }
+.chip { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border; }
+.badge-ok { @apply chip text-emerald-300 border-emerald-500/40 bg-emerald-500/10; }
+.badge-warn { @apply chip text-amber-300 border-amber-500/40 bg-amber-500/10; }
+.badge-bad { @apply chip text-rose-300 border-rose-500/40 bg-rose-500/10; }
+.badge-info { @apply chip text-cyan-300 border-cyan-500/40 bg-cyan-500/10; }
+.badge-mute { @apply chip text-slate-300 border-line bg-panel2; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

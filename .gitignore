@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+*.log
+.DS_Store
+# Never commit real workbooks with credentials or local config/credentials
+FabrixAPI1.xlsx
+*.xlsx
+*.xls
+image-providers.json
+credentials.json

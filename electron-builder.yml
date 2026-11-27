@@ -1,0 +1,26 @@
+appId: com.apparatus.pixai
+productName: AI Creative Studio
+copyright: Copyright © 2026 Apparatus Solutions
+directories:
+  output: release
+files:
+  - dist/**
+  - electron/**
+  - package.json
+win:
+  target:
+    - nsis
+  artifactName: AI-Creative-Studio-Setup.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: AI Creative Studio
+  uninstallDisplayName: AI Creative Studio
+mac:
+  target:
+    - dmg
+linux:
+  target:
+    - AppImage
