@@ -1,24 +1,26 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Wand2, Square } from 'lucide-react';
 import PromptEditor from '../components/PromptEditor';
 import GenerationSettings from '../components/GenerationSettings';
 import ImagePreview from '../components/ImagePreview';
-import { api, testStateBadge } from '../services/api';
+import { api } from '../services/api';
 import { useToast } from '../components/Toasts';
 
 /**
- * Create layout (DigiArts-style, per Ray's reference): the generated image is
- * the hero in one big centre stage card, the prompt + provider/model/settings
- * live in one composer bar directly under the stage, and recent generations
- * run down the right rail. No left control column, no bulky panels.
+ * Create page for the media team: NO provider/model pickers. The app chooses
+ * the working model itself — Settings default first, then models that have
+ * already generated successfully, then any active model; models whose free
+ * limit has ended are tried last, and if the chosen model reports its free
+ * limit ended mid-generation, the next model is tried automatically.
+ * Layout (DigiArts-style): stage hero on top, one composer bar under it,
+ * recent generations as a tile grid down the right rail.
  */
 export default function CreateImage({ config, settings, onConfigRefresh, prefill, onPrefillUsed }) {
   const toast = useToast();
   const providers = config.providers || [];
-  const [providerId, setProviderId] = useState(settings.defaultProviderId || '');
-  const [modelId, setModelId] = useState(settings.defaultModelId || '');
   const [prompt, setPrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState('');
+  const [override, setOverride] = useState(null); // {providerId, modelId} from Regenerate
   const [caps, setCaps] = useState({ capabilities: [], supportsNegativePrompt: false, supported: false });
   const [settingValues, setSettingValues] = useState({});
   const [busy, setBusy] = useState(false);
@@ -28,28 +30,39 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
   const [recent, setRecent] = useState([]);
   const requestRef = useRef(null);
 
-  const provider = providers.find((p) => p.id === providerId) || null;
-  const activeProviders = providers.filter((p) => p.enabled !== false && p.status === 'active');
-  const models = provider ? (provider.models || []).filter((m) => m.enabled !== false && m.status === 'active') : [];
-  const model = models.find((m) => m.id === modelId) || null;
+  const candidates = useMemo(() => {
+    const all = [];
+    for (const p of providers) {
+      if (p.enabled === false || p.status !== 'active' || p.adapterSupported === false) continue;
+      for (const m of p.models || []) {
+        if (m.enabled === false || m.status !== 'active') continue;
+        all.push({ provider: p, model: m });
+      }
+    }
+    const rank = (c) => {
+      if (override && c.provider.id === override.providerId && c.model.id === override.modelId) return 0;
+      if (settings.defaultProviderId && settings.defaultModelId &&
+          c.provider.id === settings.defaultProviderId && c.model.id === settings.defaultModelId) return 1;
+      if (c.model.testState === 'tested-ok') return 2;
+      if (c.model.testState === 'quota-exhausted') return 4;
+      return 3;
+    };
+    return all.sort((a, b) => rank(a) - rank(b));
+  }, [providers, settings.defaultProviderId, settings.defaultModelId, override]);
+
+  const chosen = candidates[0] || null;
+  const providerId = chosen ? chosen.provider.id : '';
+  const modelId = chosen ? chosen.model.id : '';
 
   useEffect(() => { api.historyList({}).then(setRecent).catch(() => {}); }, [result]);
   useEffect(() => {
     if (prefill) {
-      setProviderId(prefill.provider_id); setModelId(prefill.model_id);
+      setOverride({ providerId: prefill.provider_id, modelId: prefill.model_id });
       setPrompt(prefill.prompt); setNegativePrompt(prefill.negative_prompt || '');
       onPrefillUsed && onPrefillUsed();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
-  // No silent "first available" auto-selection: the user explicitly picks a
-  // provider and a model (or sets defaults in Settings). Only clear a stale
-  // model selection when the provider changes underneath it.
-  useEffect(() => {
-    if (modelId && !models.find((m) => m.id === modelId)) setModelId('');
-    if (!provider) setModelId('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider, modelId]);
   useEffect(() => {
     if (providerId && modelId) {
       api.modelCapabilities(providerId, modelId).then((c) => {
@@ -60,52 +73,53 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
         setSettingValues(defaults);
       }).catch(() => setCaps({ capabilities: [], supportsNegativePrompt: false, supported: false }));
     } else setCaps({ capabilities: [], supportsNegativePrompt: false, supported: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerId, modelId]);
 
   async function generate() {
-    if (!provider || !model) { toast('Select a provider and a model first.', 'warn'); return; }
-    if (provider.adapterSupported === false) { toast('This provider\u2019s adapter is not implemented yet.', 'error'); return; }
+    if (!candidates.length) { toast('No working model is available yet. Import the workbook first (see Settings).', 'warn'); return; }
     if (!prompt.trim()) { toast('Write a prompt first.', 'warn'); return; }
     const requestId = `req-${Date.now()}`;
     requestRef.current = requestId;
-    setBusy(true); setStatus(`Generating with ${provider.name} · ${model.name}…`);
-    const res = await api.generate({ requestId, providerId, modelId, prompt, negativePrompt, settings: settingValues });
-    setBusy(false); setStatus('');
-    if (res.ok) {
-      setResult(res.images[0]);
-      setStageRecord(res.images[0]);
-      toast(`Image generated with ${res.modelName}.`, 'success');
-      onConfigRefresh && onConfigRefresh();
-    } else {
-      toast(res.error || 'Generation failed.', 'error');
-      if (res.diagnostic) setStatus(`Diagnostic: ${res.diagnostic}`);
-      onConfigRefresh && onConfigRefresh();
+    setBusy(true);
+    let lastError = null;
+    let fellBack = false;
+    for (const cand of candidates) {
+      setStatus(`Generating with ${cand.model.name}…`);
+      const res = await api.generate({
+        requestId, providerId: cand.provider.id, modelId: cand.model.id,
+        prompt, negativePrompt, settings: settingValues,
+      });
+      if (res.ok) {
+        setBusy(false); setStatus('');
+        setResult(res.images[0]);
+        setStageRecord(res.images[0]);
+        toast(fellBack
+          ? `The previous model's free limit had ended — image generated with ${res.modelName} instead.`
+          : `Image generated with ${res.modelName}.`, 'success');
+        onConfigRefresh && onConfigRefresh();
+        return;
+      }
+      lastError = res;
+      if (res.code === 'QUOTA_EXHAUSTED') { fellBack = true; continue; } // free limit ended → try the next model
+      break; // any other error: report it, don't burn other models' quota
     }
+    setBusy(false); setStatus('');
+    if (lastError) {
+      toast(lastError.error || 'Generation failed.', 'error');
+      if (lastError.diagnostic) setStatus(`Diagnostic: ${lastError.diagnostic}`);
+    }
+    onConfigRefresh && onConfigRefresh();
   }
 
   const stage = stageRecord || result;
-  const badge = model ? testStateBadge(model.testState) : null;
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-5 items-start">
+    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_308px] gap-5 items-start">
       <div className="flex flex-col gap-4 min-w-0">
-        <ImagePreview record={stage} onRegenerate={(r) => { setProviderId(r.provider_id); setModelId(r.model_id); setPrompt(r.prompt); }} />
+        <ImagePreview record={stage} busy={busy} statusText={status}
+          onRegenerate={(r) => { setOverride({ providerId: r.provider_id, modelId: r.model_id }); setPrompt(r.prompt); }} />
 
         <div className="card p-4 space-y-3">
-          {model && (
-            <div className="flex items-center gap-2 min-w-0 anim-fade">
-              <span className="badge-info shrink-0">{provider.adapter || provider.adapterRaw || 'no adapter'}</span>
-              <span className={`${badge.cls} shrink-0`}>{badge.label}</span>
-              {model.vendorModelId && <span className="badge-mute shrink-0">{model.vendorModelId}</span>}
-              {model.description && <span className="text-xs text-mute truncate">{model.description}</span>}
-            </div>
-          )}
-          {provider && provider.adapterSupported === false && (
-            <p className="text-xs text-amber-300">This provider's adapter is not implemented yet — its configuration is imported, but generation needs a new adapter module.</p>
-          )}
-          {model && model.testState === 'quota-exhausted' && (
-            <p className="text-xs text-amber-300">Free limit ended for this model — it can't generate until the provider's free quota resets. Pick another model.</p>
-          )}
-
           <PromptEditor value={prompt} onChange={setPrompt} history={recent} compact />
           {caps.supportsNegativePrompt && (
             <div>
@@ -114,24 +128,7 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
                 value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} maxLength={2000} />
             </div>
           )}
-
           <div className="flex flex-wrap items-end gap-2.5">
-            <div className="w-[210px]">
-              <label className="label">Provider</label>
-              <select className="input" value={providerId} onChange={(e) => { setProviderId(e.target.value); setModelId(''); }}>
-                <option value="">Select a provider…</option>
-                {activeProviders.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}{p.adapterSupported === false ? ' (unsupported adapter)' : ''}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex-1 min-w-[210px]">
-              <label className="label">Model</label>
-              <select className="input" value={modelId} onChange={(e) => setModelId(e.target.value)} disabled={!provider}>
-                <option value="">{provider ? 'Select a model…' : 'Select a provider first'}</option>
-                {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-            </div>
             <GenerationSettings inline capabilities={caps.capabilities} values={settingValues}
               onChange={(k, v) => setSettingValues((s) => ({ ...s, [k]: v }))} />
             <button className="btn-primary !px-6 !py-3 ml-auto" onClick={generate} disabled={busy}>
@@ -143,11 +140,7 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
               </button>
             )}
           </div>
-          {provider && models.length === 0 && (
-            <p className="text-xs text-amber-300">This provider has no active image models in the imported workbook.</p>
-          )}
-          {busy && <div className="skeleton h-1.5 rounded-full" />}
-          {status && <p className={`text-xs ${busy ? 'text-mute generating-pulse' : 'text-rose-300'}`}>{status}</p>}
+          {status && !busy && <p className="text-xs text-rose-300">{status}</p>}
           {providers.length === 0 && (
             <div className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200" style={{ borderRadius: 16 }}>
               No providers imported yet. Save your workbook as <b>FabrixAPI1.xlsx</b> in the project folder and run
@@ -163,21 +156,22 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
           <h3 className="font-semibold text-sm">Recent generations</h3>
           <span className="badge-mute">local</span>
         </div>
-        <div className="space-y-4">
-          {recent.slice(0, 5).map((r, i) => (
-            <button key={r.id} onClick={() => setStageRecord(r)} className="block w-full text-left group">
-              <div className="relative overflow-hidden" style={{ borderRadius: 16 }}>
-                <img src={api.imageUrl(r.image_path)} alt={r.prompt} className="w-full h-28 object-cover img-hover" loading="lazy" />
-                <span className="absolute top-2 left-2 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-black/65 text-white">#{i + 1}</span>
-                {r.favorite ? <span className="absolute top-2 right-2 text-rose-400 text-xs">♥</span> : null}
-              </div>
-              <div className="mt-1.5 px-0.5">
-                <span className="text-xs font-semibold truncate block">{r.model_name}</span>
-                <span className="text-[11px] text-mute truncate block">{r.prompt}</span>
-              </div>
+        {recent.length === 0 && <p className="text-xs text-mute leading-relaxed">Nothing generated yet. Your latest images will appear here as a gallery — every image is saved in your Documents\PixAi Images folder.</p>}
+        <div className="grid grid-cols-2 gap-3">
+          {recent.slice(0, 6).map((r, i) => (
+            <button key={r.id} onClick={() => setStageRecord(r)}
+              className="group relative overflow-hidden text-left anim-fade" style={{ borderRadius: 16 }}>
+              <img src={api.imageUrl(r.image_path)} alt={r.prompt} loading="lazy"
+                className="w-full aspect-[4/3] object-cover img-hover" />
+              <span className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, transparent 46%, rgba(0,0,0,0.78))' }} />
+              <span className="absolute top-2 left-2 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-black/65 text-white">#{i + 1}</span>
+              {r.favorite ? <span className="absolute top-2 right-2 text-rose-400 text-xs drop-shadow">♥</span> : null}
+              <span className="absolute bottom-0 inset-x-0 p-2">
+                <span className="block text-[11px] font-semibold text-white truncate">{r.model_name}</span>
+                <span className="block text-[10px] text-slate-300 truncate">{r.prompt}</span>
+              </span>
             </button>
           ))}
-          {recent.length === 0 && <p className="text-xs text-mute leading-relaxed">Nothing generated yet. Your latest images will show up here, saved on this computer.</p>}
         </div>
       </aside>
     </div>

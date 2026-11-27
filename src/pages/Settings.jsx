@@ -39,8 +39,8 @@ export default function Settings({ config, settings, onSettings, onRefresh }) {
             </select>
           </div>
           <div>
-            <label className="label">Default image save location</label>
-            <input className="input" placeholder="App data folder (set when downloading)" value={settings.saveDirectory || ''} onChange={(e) => set({ saveDirectory: e.target.value })} />
+            <label className="label">Image save folder (blank = Documents\PixAi Images)</label>
+            <input className="input" placeholder="Documents\PixAi Images" value={settings.saveDirectory || ''} onChange={(e) => set({ saveDirectory: e.target.value })} />
           </div>
         </div>
         <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -76,7 +76,7 @@ export default function Settings({ config, settings, onSettings, onRefresh }) {
       </div>
       {confirmClear && (
         <Confirm title="Clear all history?" danger confirmLabel="Clear history"
-          message="This deletes all generation history records from this computer. Image files in the generated-images folder are not deleted."
+          message="This deletes all generation history records from this computer. The image files themselves (in Documents\PixAi Images) are not deleted."
           onCancel={() => setConfirmClear(false)}
           onConfirm={async () => { await api.historyClear(); setConfirmClear(false); toast('History cleared.', 'success'); }} />
       )}

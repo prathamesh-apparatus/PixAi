@@ -35,8 +35,14 @@ function meaningfulFilename(modelName, prompt, format) {
 }
 
 class ImageService {
-  constructor(userDataDir) {
-    this.dir = path.join(userDataDir, 'generated-images');
+  /**
+   * @param {string} userDataDir fallback location
+   * @param {string} [imagesDir] where generated images live — by default the
+   * user's Documents/PixAi Images folder (Ray's requirement: the media team
+   * must find generated images in Documents, not buried in app data).
+   */
+  constructor(userDataDir, imagesDir) {
+    this.dir = imagesDir || path.join(userDataDir, 'generated-images');
     fs.mkdirSync(this.dir, { recursive: true });
   }
   save(buffer, modelName, prompt, formatHint) {

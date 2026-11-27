@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Download, RefreshCw, Copy, Heart, Maximize2, ImageIcon } from 'lucide-react';
+import { Download, RefreshCw, Copy, Heart, Maximize2, ImageIcon, Sparkles } from 'lucide-react';
 import Modal from './Modal';
 import { api } from '../services/api';
 import { useToast } from './Toasts';
@@ -7,11 +7,35 @@ import { useToast } from './Toasts';
 /** Centre stage, modelled on the DigiArts reference: title bar on top of one
  *  big soft-rounded image card, action bar underneath — favorite pill left,
  *  Preview ghost button, solid blue Download on the right. */
-export default function ImagePreview({ record, onRegenerate, onFavoriteChanged }) {
+export default function ImagePreview({ record, onRegenerate, onFavoriteChanged, busy = false, statusText = '' }) {
   const toast = useToast();
   const [full, setFull] = useState(false);
   const [fav, setFav] = useState(false);
   useEffect(() => { setFav(!!(record && record.favorite)); }, [record]);
+
+  if (busy) {
+    return (
+      <div className="card h-full min-h-[380px] flex flex-col items-center justify-center text-center p-6 overflow-hidden relative">
+        <span className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(420px 220px at 50% 42%, rgba(47,123,255,0.16), transparent 70%)' }} />
+        <div className="relative w-24 h-24 flex items-center justify-center">
+          <span className="gen-ring absolute inset-0 rounded-full border border-cyan-400/50" />
+          <span className="gen-ring absolute inset-0 rounded-full border border-blue-500/40" style={{ animationDelay: '0.6s' }} />
+          <span className="gen-ring absolute inset-0 rounded-full border border-violet-500/30" style={{ animationDelay: '1.2s' }} />
+          <div className="gen-float w-14 h-14 flex items-center justify-center text-white relative"
+            style={{ borderRadius: 18, background: 'linear-gradient(140deg,#38e1ff,#2f7bff 55%,#8b5cf6)', boxShadow: '0 12px 30px rgba(47,123,255,0.5), inset 0 1px 0 rgba(255,255,255,0.5)' }}>
+            <Sparkles size={24} />
+          </div>
+        </div>
+        <p className="mt-5 font-semibold text-sm relative">
+          Generating your image
+          <span className="gen-dot">.</span><span className="gen-dot" style={{ animationDelay: '0.2s' }}>.</span><span className="gen-dot" style={{ animationDelay: '0.4s' }}>.</span>
+        </p>
+        {statusText && <p className="mt-1 text-xs text-mute relative">{statusText}</p>}
+        <div className="skeleton h-1.5 w-56 rounded-full mt-5 relative" />
+        <p className="mt-3 text-[11px] text-mute relative">Painting pixels — this usually takes a few seconds.</p>
+      </div>
+    );
+  }
 
   if (!record) {
     return (
@@ -19,7 +43,7 @@ export default function ImagePreview({ record, onRegenerate, onFavoriteChanged }
         <div className="w-12 h-12 flex items-center justify-center text-cy" style={{ borderRadius: 16, background: '#1e2025', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08)' }}>
           <ImageIcon size={22} />
         </div>
-        <p className="mt-3 text-xs text-mute max-w-[280px] leading-relaxed">Your generated image will appear here. Write a prompt in the bar below, pick a model, and hit Generate.</p>
+        <p className="mt-3 text-xs text-mute max-w-[280px] leading-relaxed">Your generated image will appear here. Write a prompt in the bar below and hit Generate.</p>
       </div>
     );
   }

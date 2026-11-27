@@ -29,6 +29,16 @@ function setup() {
   return { configManager, historyService, generationService };
 }
 
+describe('image service save location', () => {
+  it('saves into a custom folder (Documents/PixAi Images) when one is given', () => {
+    const custom = path.join(dir, 'Documents', 'PixAi Images');
+    const img = new ImageService(dir, custom);
+    const f = img.save(PNG_1PX, 'Gen Img', 'a blue house', 'png');
+    expect(f.path.startsWith(custom)).toBe(true);
+    expect(fs.existsSync(f.path)).toBe(true);
+  });
+});
+
 describe('history service', () => {
   it('adds, searches, filters, favorites and deletes records (files untouched by record delete)', () => {
     const h = new HistoryService(dir);

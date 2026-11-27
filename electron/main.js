@@ -31,8 +31,22 @@ function buildServices() {
   const configManager = new ConfigManager(userData);
   const credentialManager = new CredentialManager(path.join(userData, 'credentials'), safeStorage);
   const historyService = new HistoryService(userData);
-  const imageService = new ImageService(userData);
   const settingsManager = new SettingsManager(userData);
+  // Generated images belong in the user's Documents folder (PixAi Images),
+  // unless Settings overrides the save location. One-time, non-destructive
+  // migration: copy anything generated into the old app-data folder across,
+  // so existing history thumbnails keep working.
+  const settings = settingsManager.getAll();
+  const imagesDir = (settings.saveDirectory && settings.saveDirectory.trim())
+    || path.join(app.getPath('documents'), 'PixAi Images');
+  const imageService = new ImageService(userData, imagesDir);
+  const legacyDir = path.join(userData, 'generated-images');
+  if (path.resolve(legacyDir) !== path.resolve(imagesDir) && fs.existsSync(legacyDir)) {
+    for (const name of fs.readdirSync(legacyDir)) {
+      const dest = path.join(imagesDir, name);
+      if (!fs.existsSync(dest)) { try { fs.copyFileSync(path.join(legacyDir, name), dest); } catch { /* best-effort */ } }
+    }
+  }
   const generationService = new GenerationService({ configManager, credentialManager, historyService, imageService });
   return { userData, configManager, credentialManager, historyService, imageService, settingsManager, generationService };
 }
@@ -87,7 +101,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   services = buildServices();
-  registerImageProtocol(path.join(services.userData, 'generated-images'));
+  registerImageProtocol(services.imageService.dir);
   const ctx = { ...services, getWindow: () => win };
   registerConfigIpc(ctx);
   registerGenerationIpc(ctx);
