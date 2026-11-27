@@ -2,37 +2,45 @@
 const { BaseAdapter, AdapterError, mapHttpError, fetchWithTimeout } = require('./base-adapter');
 
 /**
- * OpenRouter adapter (image models).
- * Endpoint: POST https://openrouter.ai/api/v1/chat/completions with
- * modalities:["image","text"]; image results arrive in
- * choices[0].message.images[].image_url.url (usually a data: URL).
- * Text-only chat responses are treated as an error — never as an image.
+ * OpenRouter adapter — uses the OpenRouter Images API.
+ * The workbook Base URL for OpenRouter is https://openrouter.ai/api/v1/images,
+ * so generation posts to {baseUrl}/generations with an OpenAI-style body
+ * { model, prompt, size, n } and reads data[].b64_json / data[].url.
+ * (A generic OpenAI adapter appending /images/generations to that base URL
+ * produced ".../images/images/generations" and the "404 Model not found"
+ * error seen in the app — this adapter normalises the endpoint instead.)
+ * A chat-completions style image payload is also decoded if one is returned.
  */
 class OpenRouterAdapter extends BaseAdapter {
   constructor() { super(); this.id = 'openrouter'; this.displayName = 'OpenRouter'; }
 
   capabilities() {
     return [
-      { key: 'aspectRatio', label: 'Aspect ratio', type: 'select', options: ['1:1', '16:9', '9:16', '4:3', '3:4'], default: '1:1' },
-      { key: 'seed', label: 'Seed (optional)', type: 'number', min: 0, max: 999999999, default: '' },
+      { key: 'size', label: 'Size', type: 'select', options: ['1024x1024', '1024x1792', '1792x1024', '1536x1024', '1024x1536'], default: '1024x1024' },
+      { key: 'count', label: 'Number of images', type: 'number', min: 1, max: 4, default: 1 },
     ];
   }
   supportsNegativePrompt() { return false; }
 
   endpoint(provider) {
-    const base = (provider.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
-    return `${base}/chat/completions`;
+    const base = (provider.baseUrl || 'https://openrouter.ai/api/v1/images').replace(/\/+$/, '');
+    if (base.endsWith('/images/generations')) return base;
+    if (base.endsWith('/images')) return `${base}/generations`;
+    if (base.endsWith('/v1')) return `${base}/images/generations`;
+    return `${base}/images/generations`;
+  }
+  apiRoot(provider) {
+    return this.endpoint(provider).replace(/\/images\/generations$/, '');
   }
 
   async generate({ provider, model, apiKey, prompt, settings = {}, fetchImpl = fetch, signal, timeoutMs }) {
-    if (!apiKey) throw new AdapterError('No API key saved for this provider. Import a workbook with the key or add it in Provider Settings.', { code: 'AUTH_FAILED' });
+    if (!apiKey) throw new AdapterError('No API key saved for this provider. Re-run the import command with a workbook that contains the key, or add it in Provider Settings.', { code: 'AUTH_FAILED' });
     const body = {
       model: model.vendorModelId,
-      modalities: ['image', 'text'],
-      messages: [{ role: 'user', content: prompt }],
-      image_config: { aspect_ratio: settings.aspectRatio || '1:1' },
+      prompt,
+      size: settings.size || '1024x1024',
+      n: Math.min(4, Math.max(1, Number(settings.count) || 1)),
     };
-    if (settings.seed !== '' && settings.seed != null) body.seed = Number(settings.seed);
     const res = await fetchWithTimeout(fetchImpl, this.endpoint(provider), {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'X-Title': 'PixAi AI Creative Studio' },
@@ -40,27 +48,31 @@ class OpenRouterAdapter extends BaseAdapter {
     }, timeoutMs, signal);
     if (!res.ok) throw mapHttpError(res.status, await res.text());
     const j = await res.json();
-    const msg = j.choices && j.choices[0] && j.choices[0].message;
-    const images = (msg && msg.images) || [];
-    if (!images.length) {
-      throw new AdapterError('OpenRouter returned no image for this model. The model may be text-only or does not support image output via chat completions.', { code: 'BAD_RESPONSE', diagnostic: JSON.stringify(j).slice(0, 200) });
-    }
     const out = [];
-    for (const im of images) {
-      const url = (im.image_url && im.image_url.url) || im.url || '';
-      const m = url.match(/^data:image\/(\w+);base64,(.+)$/);
-      if (m) out.push({ buffer: Buffer.from(m[2], 'base64'), format: m[1] === 'jpeg' ? 'jpg' : m[1] });
-      else if (url.startsWith('http')) out.push({ remoteUrl: url, format: 'png' });
+    for (const it of j.data || []) {
+      if (it.b64_json) out.push({ buffer: Buffer.from(it.b64_json, 'base64'), format: 'png' });
+      else if (it.url) out.push({ remoteUrl: it.url, format: 'png' });
     }
-    if (!out.length) throw new AdapterError('OpenRouter image payload could not be decoded.', { code: 'BAD_RESPONSE' });
+    if (!out.length) {
+      // Defensive: some OpenRouter image models answer in chat-completions shape.
+      const msg = j.choices && j.choices[0] && j.choices[0].message;
+      for (const im of (msg && msg.images) || []) {
+        const url = (im.image_url && im.image_url.url) || im.url || '';
+        const m = url.match(/^data:image\/(\w+);base64,(.+)$/);
+        if (m) out.push({ buffer: Buffer.from(m[2], 'base64'), format: m[1] === 'jpeg' ? 'jpg' : m[1] });
+        else if (url.startsWith('http')) out.push({ remoteUrl: url, format: 'png' });
+      }
+    }
+    if (!out.length) {
+      throw new AdapterError('OpenRouter returned no image data for this model. The model may be unavailable on the Images API right now — try Test model again or check the model status in the workbook.', { code: 'BAD_RESPONSE', diagnostic: JSON.stringify(j).slice(0, 200) });
+    }
     return out;
   }
 
   async testConnection({ provider, apiKey, fetchImpl = fetch }) {
     if (!apiKey) return { ok: false, message: 'No API key saved for this provider.' };
     try {
-      const base = (provider.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
-      const res = await fetchWithTimeout(fetchImpl, `${base}/auth/key`, { headers: { Authorization: `Bearer ${apiKey}` } }, 20000);
+      const res = await fetchWithTimeout(fetchImpl, `${this.apiRoot(provider)}/auth/key`, { headers: { Authorization: `Bearer ${apiKey}` } }, 20000);
       if (res.ok) return { ok: true, message: 'API key verified with OpenRouter.' };
       const err = mapHttpError(res.status, await res.text());
       return { ok: false, message: err.message };

@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 const { CloudflareAdapter } = require('../electron/adapters/cloudflare-adapter');
 const { OpenRouterAdapter } = require('../electron/adapters/openrouter-adapter');
 const { OpenAICompatibleAdapter } = require('../electron/adapters/openai-compatible-adapter');
+const { NvidiaAdapter } = require('../electron/adapters/nvidia-adapter');
 const { resolveAdapter } = require('../electron/adapters/registry');
 const { PNG_1PX } = require('./workbook-helper');
 
@@ -26,6 +27,12 @@ describe('adapter resolution', () => {
     expect(resolveAdapter({ adapterRaw: 'OpenAI' }).adapterId).toBe('openai-compatible');
     expect(resolveAdapter({ adapterRaw: '', baseUrl: 'https://openrouter.ai/api/v1' }).adapterId).toBe('openrouter');
     expect(resolveAdapter({ adapterRaw: 'BrandNewAPI', baseUrl: 'https://x.example' }).supported).toBe(false);
+  });
+  it('known hosts win over a generic "OpenAI" workbook label (real FabrixAPI1.xlsx regression)', () => {
+    // The real workbook labels OpenRouter and NVIDIA NIM simply "OpenAI".
+    expect(resolveAdapter({ adapterRaw: 'OpenAI', baseUrl: 'https://openrouter.ai/api/v1/images' }).adapterId).toBe('openrouter');
+    expect(resolveAdapter({ adapterRaw: 'OpenAI', baseUrl: 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux-3-image-klein' }).adapterId).toBe('nvidia');
+    expect(resolveAdapter({ adapterRaw: 'Cloudflare Workers AI', baseUrl: 'https://api.cloudflare.com/client/v4/accounts/x/ai/run' }).adapterId).toBe('cloudflare');
   });
 });
 
@@ -62,22 +69,55 @@ describe('cloudflare adapter', () => {
   });
 });
 
-describe('openrouter adapter', () => {
-  const provider = { baseUrl: 'https://openrouter.ai/api/v1' };
-  const model = { vendorModelId: 'vendor/image-model' };
-  it('extracts data-url images from chat completions and sends modalities', async () => {
-    let sentBody = null;
+describe('openrouter adapter (Images API)', () => {
+  const provider = { baseUrl: 'https://openrouter.ai/api/v1/images' };
+  const model = { vendorModelId: 'recraft/recraft-v4.1-flash-v2:free' };
+  it('posts to {baseUrl}/generations (never /images/images/generations) and decodes b64_json', async () => {
+    let seenUrl = ''; let sentBody = null;
     const fetchImpl = fakeFetch(async (url, opts) => {
-      sentBody = JSON.parse(opts.body);
-      return res({ ctype: 'application/json', body: Buffer.alloc(0), jsonBody: { choices: [{ message: { images: [{ image_url: { url: `data:image/png;base64,${PNG_1PX.toString('base64')}` } }] } }] } });
+      seenUrl = url; sentBody = JSON.parse(opts.body);
+      return res({ ctype: 'application/json', body: Buffer.alloc(0), jsonBody: { data: [{ b64_json: PNG_1PX.toString('base64') }] } });
     });
     const out = await new OpenRouterAdapter().generate({ provider, model, apiKey: 'k', prompt: 'draw', settings: {}, fetchImpl });
-    expect(sentBody.modalities).toContain('image');
+    expect(seenUrl).toBe('https://openrouter.ai/api/v1/images/generations');
+    expect(sentBody.model).toBe('recraft/recraft-v4.1-flash-v2:free');
+    expect(sentBody.prompt).toBe('draw');
     expect(out[0].buffer.equals(PNG_1PX)).toBe(true);
   });
-  it('a text-only response is an error, never a fake image', async () => {
+  it('normalises a /v1 base URL to the images endpoint', () => {
+    const a = new OpenRouterAdapter();
+    expect(a.endpoint({ baseUrl: 'https://openrouter.ai/api/v1' })).toBe('https://openrouter.ai/api/v1/images/generations');
+    expect(a.endpoint({ baseUrl: 'https://openrouter.ai/api/v1/images/generations' })).toBe('https://openrouter.ai/api/v1/images/generations');
+  });
+  it('a response without image data is an error, never a fake image', async () => {
     const fetchImpl = fakeFetch(async () => res({ ctype: 'application/json', body: Buffer.alloc(0), jsonBody: { choices: [{ message: { content: 'just text' } }] } }));
     await expect(new OpenRouterAdapter().generate({ provider, model, apiKey: 'k', prompt: 'draw', settings: {}, fetchImpl })).rejects.toMatchObject({ code: 'BAD_RESPONSE' });
+  });
+  it('maps a 404 to MODEL_NOT_FOUND with the provider message', async () => {
+    const fetchImpl = fakeFetch(async () => res({ ok: false, status: 404, ctype: 'application/json', body: Buffer.alloc(0), textBody: '{"error":{"message":"No endpoints found"}}' }));
+    await expect(new OpenRouterAdapter().generate({ provider, model, apiKey: 'k', prompt: 'draw', settings: {}, fetchImpl })).rejects.toMatchObject({ code: 'MODEL_NOT_FOUND' });
+  });
+});
+
+describe('nvidia adapter', () => {
+  const provider = { baseUrl: 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux-3-image-klein' };
+  it('swaps the trailing model segment in the per-model endpoint and decodes artifacts', async () => {
+    let seenUrl = ''; let sentBody = null;
+    const fetchImpl = fakeFetch(async (url, opts) => {
+      seenUrl = url; sentBody = JSON.parse(opts.body);
+      return res({ ctype: 'application/json', body: Buffer.alloc(0), jsonBody: { artifacts: [{ base64: PNG_1PX.toString('base64'), finishReason: 'SUCCESS' }] } });
+    });
+    const out = await new NvidiaAdapter().generate({ provider, model: { vendorModelId: 'black-forest-labs/flux.1-schnell' }, apiKey: 'k', prompt: 'draw', settings: {}, fetchImpl });
+    expect(seenUrl).toBe('https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell');
+    expect(sentBody.prompt).toBe('draw');
+    expect(sentBody.width).toBe(1024);
+    expect(out[0].buffer.equals(PNG_1PX)).toBe(true);
+  });
+  it('uses the base URL unchanged when it already targets the selected model', async () => {
+    let seenUrl = '';
+    const fetchImpl = fakeFetch(async (url) => { seenUrl = url; return res({ ctype: 'application/json', body: Buffer.alloc(0), jsonBody: { artifacts: [{ base64: PNG_1PX.toString('base64') }] } }); });
+    await new NvidiaAdapter().generate({ provider, model: { vendorModelId: 'black-forest-labs/flux-3-image-klein' }, apiKey: 'k', prompt: 'x', settings: {}, fetchImpl });
+    expect(seenUrl).toBe(provider.baseUrl);
   });
 });
 

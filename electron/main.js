@@ -69,7 +69,8 @@ function setupWatcher(settingsManager) {
 function createWindow() {
   win = new BrowserWindow({
     width: 1500, height: 950, minWidth: 1100, minHeight: 700,
-    backgroundColor: '#0b0e17',
+    backgroundColor: '#08080d',
+    autoHideMenuBar: true,
     title: 'PixAi — AI Creative Studio',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

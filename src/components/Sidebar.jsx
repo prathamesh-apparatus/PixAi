@@ -14,7 +14,7 @@ export default function Sidebar({ page, onNavigate, collapsed, onToggle }) {
     <aside className={`flex flex-col bg-navy transition-all duration-300 ${collapsed ? 'w-[72px]' : 'w-60'}`}>
       <div className="flex items-center gap-3 px-4 h-[72px]">
         <div className="w-10 h-10 flex items-center justify-center shrink-0 text-white font-black text-lg"
-          style={{ background: 'linear-gradient(135deg,#2f7bff,#7c5cff)', borderRadius: 14, boxShadow: '0 8px 20px rgba(47,123,255,0.35)' }}>
+          style={{ background: 'linear-gradient(135deg,#8b5cf6,#3f7dff)', borderRadius: 14, boxShadow: '0 8px 22px rgba(124,108,255,0.45)' }}>
           P
         </div>
         {!collapsed && (
@@ -27,16 +27,18 @@ export default function Sidebar({ page, onNavigate, collapsed, onToggle }) {
       <nav className="flex-1 py-2 px-3 space-y-1.5 overflow-y-auto">
         {ITEMS.map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => onNavigate(key)} title={label}
-            className={`w-full flex items-center gap-3 px-3.5 py-3 text-sm ${page === key ? 'bg-panel2 text-white shadow-card' : 'text-slate-300 hover:bg-panel hover:text-white'}`}
-            style={{ borderRadius: 16 }}>
-            <Icon size={19} className={page === key ? 'text-cy' : 'text-mute'} />
+            className={`w-full flex items-center gap-3 px-3.5 py-3 text-sm ${page === key ? 'text-white shadow-glow' : 'text-slate-300 hover:bg-panel hover:text-white hover:translate-x-0.5'}`}
+            style={page === key
+              ? { borderRadius: 16, background: 'linear-gradient(120deg, rgba(139,92,246,0.9), rgba(63,125,255,0.85))' }
+              : { borderRadius: 16 }}>
+            <Icon size={19} className={page === key ? 'text-white' : 'text-mute'} />
             {!collapsed && <span className="truncate font-medium">{label}</span>}
           </button>
         ))}
       </nav>
       <div className="p-3">
         {!collapsed && (
-          <div className="px-3.5 py-3 text-[11px] leading-relaxed text-mute" style={{ borderRadius: 16, background: '#161a22' }}>
+          <div className="px-3.5 py-3 text-[11px] leading-relaxed text-mute" style={{ borderRadius: 16, background: '#14141e' }}>
             Providers & models come from your Excel workbook. Update it any time with:<br />
             <span className="text-slate-300 font-mono text-[10.5px]">npm run import -- .\FabrixAPI1.xlsx</span>
           </div>
