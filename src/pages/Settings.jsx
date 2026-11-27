@@ -49,17 +49,10 @@ export default function Settings({ config, settings, onSettings, onRefresh }) {
       </div>
 
       <div className="card p-5 space-y-3">
-        <h3 className="font-semibold">Watch Excel File for Changes</h3>
-        <p className="text-sm text-mute">When enabled, PixAi watches one workbook file. When it changes and finishes saving, you get an import preview — changes are never applied without your confirmation.</p>
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input type="checkbox" checked={!!settings.watchExcelEnabled}
-            onChange={async (e) => { await set({ watchExcelEnabled: e.target.checked }); await api.watchConfigure(); }} />
-          Watch Excel File for Changes
-        </label>
-        <div className="flex gap-2 items-center">
-          <input className="input flex-1" readOnly placeholder="No file selected" value={settings.watchExcelPath || ''} />
-          <button className="btn-ghost" onClick={async () => { const r = await api.watchPickFile(); if (r.ok) { await set({ watchExcelPath: r.path }); await api.watchConfigure(); toast('Watch file set.', 'success'); } }}>Choose file…</button>
-        </div>
+        <h3 className="font-semibold">Provider workbook</h3>
+        <p className="text-sm text-mute leading-relaxed">Providers and models are imported from the command line, not from inside the app. Save your workbook as <b className="text-slate-300">FabrixAPI1.xlsx</b> in the project folder and run:</p>
+        <p className="font-mono text-sm text-cy">npm run import -- .\FabrixAPI1.xlsx</p>
+        <p className="text-xs text-mute">Add <span className="font-mono">--dry-run</span> to preview changes without saving, or <span className="font-mono">--deactivate</span> to also deactivate models removed from the workbook. Restart the app after importing.</p>
       </div>
 
       <div className="card p-5 space-y-3">

@@ -3,7 +3,7 @@ import { Plug, FlaskConical, KeyRound, ChevronDown, ChevronRight } from 'lucide-
 import { api, testStateBadge } from '../services/api';
 import { useToast } from '../components/Toasts';
 
-function ProviderCard({ provider, onRefresh, onImport }) {
+function ProviderCard({ provider, onRefresh }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [keyInput, setKeyInput] = useState('');
@@ -43,7 +43,6 @@ function ProviderCard({ provider, onRefresh, onImport }) {
             Enabled
           </label>
           <button className="btn-ghost !py-1.5 text-xs" onClick={testProvider} disabled={busy === 'provider'}><Plug size={13} /> {busy === 'provider' ? 'Testing…' : 'Test connection'}</button>
-          <button className="btn-ghost !py-1.5 text-xs" onClick={onImport}>Import Excel</button>
         </div>
       </div>
       {provider.adapterSupported === false && (
@@ -90,23 +89,25 @@ function ProviderCard({ provider, onRefresh, onImport }) {
   );
 }
 
-export default function Providers({ config, onRefresh, onImport }) {
+export default function Providers({ config, onRefresh }) {
   const providers = config.providers || [];
   if (!providers.length) {
     return (
       <div className="card p-10 text-center">
-        <p className="text-sm text-mute mb-4">No providers imported yet. Import your Excel workbook to load providers and models dynamically — nothing is hardcoded.</p>
-        <button className="btn-primary" onClick={onImport}>Import Excel</button>
+        <p className="text-sm text-mute mb-3">No providers imported yet. Providers and models load from your Excel workbook — nothing is hardcoded.</p>
+        <p className="text-sm text-slate-300">Save the workbook as <b>FabrixAPI1.xlsx</b> in the project folder, then run:</p>
+        <p className="font-mono text-sm mt-2 text-cy">npm run import -- .\FabrixAPI1.xlsx</p>
+        <p className="text-xs text-mute mt-3">Then restart the app — your providers and models will be here.</p>
       </div>
     );
   }
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <p className="text-sm text-mute">{providers.length} providers · {providers.reduce((n, p) => n + (p.models || []).length, 0)} image models{config.sourceFile ? ` · source: ${config.sourceFile}` : ''}{config.updatedAt ? ` · updated ${new Date(config.updatedAt).toLocaleString()}` : ''}</p>
-        <button className="btn-primary !py-2 text-sm" onClick={onImport}>Import Excel</button>
+        <span className="font-mono text-[11px] text-mute">Update workbook: npm run import -- .\FabrixAPI1.xlsx</span>
       </div>
-      {providers.map((p) => <ProviderCard key={p.id} provider={p} onRefresh={onRefresh} onImport={onImport} />)}
+      {providers.map((p) => <ProviderCard key={p.id} provider={p} onRefresh={onRefresh} />)}
     </div>
   );
 }

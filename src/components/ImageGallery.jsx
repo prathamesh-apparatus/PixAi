@@ -15,8 +15,8 @@ export default function ImageGallery({ records, onChanged, onRegenerate, onPrevi
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
         {records.map((r) => (
           <div key={r.id} className="card overflow-hidden group">
-            <button className="block w-full" onClick={() => onPreview && onPreview(r)}>
-              <img src={api.imageUrl(r.image_path)} alt={r.prompt} className="w-full h-44 object-cover" loading="lazy" />
+            <button className="block w-full overflow-hidden" onClick={() => onPreview && onPreview(r)}>
+              <img src={api.imageUrl(r.image_path)} alt={r.prompt} className="w-full h-44 object-cover img-hover" loading="lazy" />
             </button>
             <div className="p-3">
               <p className="text-xs leading-relaxed line-clamp-2 min-h-[32px]">{r.prompt}</p>
