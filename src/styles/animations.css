@@ -30,5 +30,9 @@
 .gen-bar { animation: barSlide 1.7s ease-in-out infinite; }
 @keyframes floatSoft { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 .gen-float-soft { animation: floatSoft 3.4s ease-in-out infinite; }
+@keyframes gemTwinkle { 0% { transform: rotate(0deg) scale(1); } 50% { transform: rotate(90deg) scale(1.1); } 100% { transform: rotate(180deg) scale(1); } }
+.gem-twinkle { animation: gemTwinkle 5.6s ease-in-out infinite; }
+@keyframes hueSpin { to { filter: hue-rotate(360deg); } }
+.gem-hue { animation: hueSpin 8s linear infinite; }
 .img-hover { transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
 .group:hover .img-hover { transform: scale(1.045); }

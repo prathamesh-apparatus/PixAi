@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Download, RefreshCw, Copy, Heart, Maximize2, ImageIcon, Sparkles, X } from 'lucide-react';
+import { Download, RefreshCw, Copy, Heart, Maximize2, ImageIcon, X } from 'lucide-react';
 import ImageViewer from './ImageViewer';
 import { api } from '../services/api';
 import { useToast } from './Toasts';
@@ -14,23 +14,31 @@ export default function ImagePreview({ record, onRegenerate, onFavoriteChanged, 
   useEffect(() => { setFav(!!(record && record.favorite)); }, [record]);
 
   if (busy) {
-    // Soft, smooth generating visual (Ray: the bouncing dots felt glitchy /
-    // vibrating): a breathing glow, one slow-spinning dashed ring and a
-    // gently floating logo tile, plus a smooth sliding progress bar.
+    // Google Gemini-style generating visual (Ray's ask): the four-point AI
+    // sparkle in a blue→violet→pink gradient, slowly rotating and softly
+    // scaling while its colours cycle — all long, eased motions, nothing
+    // bouncy or vibrating — over a breathing glow, with a smooth progress bar.
     return (
       <div className="card h-full min-h-[380px] flex flex-col items-center justify-center text-center p-6 overflow-hidden relative">
-        <div className="relative w-[92px] h-[92px] flex items-center justify-center">
-          <span className="gen-breathe absolute inset-0 rounded-full" style={{ background: 'radial-gradient(circle, rgba(56,225,255,0.26), rgba(47,123,255,0.12) 55%, transparent 72%)' }} />
-          <span className="gen-spin-slow absolute inset-0 rounded-full border border-dashed border-slate-500/40" />
-          <div className="gen-float-soft w-14 h-14 flex items-center justify-center text-white relative"
-            style={{ borderRadius: 18, background: 'linear-gradient(140deg,#38e1ff,#2f7bff 55%,#8b5cf6)', boxShadow: '0 12px 30px rgba(47,123,255,0.45), inset 0 1px 0 rgba(255,255,255,0.5)' }}>
-            <Sparkles size={24} />
+        <div className="relative w-[104px] h-[104px] flex items-center justify-center">
+          <span className="gen-breathe absolute inset-0 rounded-full" style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.28), rgba(47,123,255,0.12) 55%, transparent 72%)' }} />
+          <div className="gem-hue relative">
+            <svg className="gem-twinkle block" width="62" height="62" viewBox="0 0 48 48" style={{ filter: 'drop-shadow(0 8px 22px rgba(139,92,246,0.55))' }}>
+              <defs>
+                <linearGradient id="gem-g" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stopColor="#38bdf8" />
+                  <stop offset="0.5" stopColor="#8b5cf6" />
+                  <stop offset="1" stopColor="#f472b6" />
+                </linearGradient>
+              </defs>
+              <path d="M24 3 C25.8 15.5 32.5 22.2 45 24 C32.5 25.8 25.8 32.5 24 45 C22.2 32.5 15.5 25.8 3 24 C15.5 22.2 22.2 15.5 24 3 Z" fill="url(#gem-g)" />
+            </svg>
           </div>
         </div>
         <p className="mt-5 font-semibold text-sm">Generating your image…</p>
         {statusText && <p className="mt-1 text-xs text-mute">{statusText}</p>}
         <div className="w-56 h-1.5 rounded-full bg-panel2 overflow-hidden mt-5 relative">
-          <div className="gen-bar absolute inset-y-0 w-1/3 rounded-full" style={{ background: 'linear-gradient(90deg,#38e1ff,#2f7bff,#8b5cf6)' }} />
+          <div className="gen-bar absolute inset-y-0 w-1/2 rounded-full" style={{ background: 'linear-gradient(90deg,#38bdf8,#8b5cf6,#f472b6)' }} />
         </div>
       </div>
     );
