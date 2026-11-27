@@ -36,16 +36,13 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
-  useEffect(() => {
-    if (!providerId && providers.length) {
-      const first = providers.find((p) => p.enabled !== false && p.status === 'active');
-      if (first) setProviderId(first.id);
-    }
-  }, [providers, providerId]);
+  // No silent "first available" auto-selection: the user explicitly picks a
+  // provider and a model (or sets defaults in Settings). Only clear a stale
+  // model selection when the provider changes underneath it.
   useEffect(() => {
     const models = provider ? (provider.models || []).filter((m) => m.enabled !== false && m.status === 'active') : [];
-    if (models.length && !models.find((m) => m.id === modelId)) setModelId(models[0].id);
-    if (!models.length) setModelId('');
+    if (modelId && !models.find((m) => m.id === modelId)) setModelId('');
+    if (!provider) setModelId('');
   }, [provider, modelId]);
   useEffect(() => {
     if (providerId && modelId) {
@@ -83,7 +80,7 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
   const stage = stageRecord || result;
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[380px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)_290px] gap-5 items-start">
-      <div className="card p-5 space-y-5">
+      <div className="card p-5 space-y-5 lg:sticky lg:top-0 lg:max-h-[calc(100vh-130px)] lg:overflow-y-auto">
         <ProviderSelector providers={providers} value={providerId} onChange={(v) => { setProviderId(v); setModelId(''); }} />
         <ModelSelector provider={provider} value={modelId} onChange={setModelId} />
         <PromptEditor value={prompt} onChange={setPrompt} history={recent} />

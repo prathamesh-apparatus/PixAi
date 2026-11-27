@@ -21,14 +21,14 @@ export default function Settings({ config, settings, onSettings, onRefresh }) {
           <div>
             <label className="label">Default provider</label>
             <select className="input" value={settings.defaultProviderId || ''} onChange={(e) => set({ defaultProviderId: e.target.value, defaultModelId: '' })}>
-              <option value="">First available</option>
+              <option value="">Select a provider</option>
               {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
           <div>
             <label className="label">Default model</label>
             <select className="input" value={settings.defaultModelId || ''} onChange={(e) => set({ defaultModelId: e.target.value })}>
-              <option value="">First available</option>
+              <option value="">Select a model</option>
               {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </div>

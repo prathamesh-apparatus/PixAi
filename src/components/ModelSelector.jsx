@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { testStateBadge } from '../services/api';
 
 export default function ModelSelector({ provider, value, onChange }) {
   const models = provider ? (provider.models || []).filter((m) => m.enabled !== false && m.status === 'active') : [];
   const selected = models.find((m) => m.id === value);
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => { setExpanded(false); }, [value]);
   return (
     <div>
       <label className="label">Model</label>
@@ -13,7 +15,16 @@ export default function ModelSelector({ provider, value, onChange }) {
       </select>
       {selected && (
         <div className="mt-2.5 space-y-1.5">
-          {selected.description && <p className="text-xs text-slate-300 leading-relaxed">{selected.description}</p>}
+          {selected.description && (
+            <div>
+              <p className={`text-xs text-slate-300 leading-relaxed ${expanded ? '' : 'line-clamp-3'}`}>{selected.description}</p>
+              {selected.description.length > 220 && (
+                <button className="text-[11px] font-medium text-cy hover:text-white mt-0.5" onClick={() => setExpanded((v) => !v)}>
+                  {expanded ? 'Show less' : 'Read more'}
+                </button>
+              )}
+            </div>
+          )}
           <div className="flex flex-wrap gap-1.5">
             <span className="badge-info">{provider.adapter || provider.adapterRaw || 'no adapter'}</span>
             <span className={testStateBadge(selected.testState).cls}>{testStateBadge(selected.testState).label}</span>
