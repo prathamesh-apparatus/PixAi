@@ -20,6 +20,7 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [result, setResult] = useState(null);
+  const [stageRecord, setStageRecord] = useState(null);
   const [recent, setRecent] = useState([]);
   const requestRef = useRef(null);
 
@@ -69,6 +70,7 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
     setBusy(false); setStatus('');
     if (res.ok) {
       setResult(res.images[0]);
+      setStageRecord(res.images[0]);
       toast(`Image generated with ${res.modelName}.`, 'success');
       onConfigRefresh && onConfigRefresh();
     } else {
@@ -78,8 +80,9 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
     }
   }
 
+  const stage = stageRecord || result;
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[430px_1fr] gap-5 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-[380px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)_290px] gap-5 items-start">
       <div className="card p-5 space-y-5">
         <ProviderSelector providers={providers} value={providerId} onChange={(v) => { setProviderId(v); setModelId(''); }} />
         <ModelSelector provider={provider} value={modelId} onChange={setModelId} />
@@ -109,12 +112,35 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
         {busy && <div className="skeleton h-2 rounded-full" />}
         {status && <p className={`text-xs ${busy ? 'text-mute generating-pulse' : 'text-rose-300'}`}>{status}</p>}
         {providers.length === 0 && (
-          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-            No providers imported yet. Go to <b>Import Excel</b> and import your provider workbook (e.g. FabrixAPI1.xlsx) to start generating.
+          <div className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200" style={{ borderRadius: 16 }}>
+            No providers imported yet. Save your workbook as <b>FabrixAPI1.xlsx</b> in the project folder and run
+            <span className="block font-mono text-xs mt-1.5 text-amber-100">npm run import -- .\FabrixAPI1.xlsx</span>
+            then restart the app to start generating.
           </div>
         )}
       </div>
-      <ImagePreview record={result} onRegenerate={(r) => { setProviderId(r.provider_id); setModelId(r.model_id); setPrompt(r.prompt); }} />
+      <ImagePreview record={stage} onRegenerate={(r) => { setProviderId(r.provider_id); setModelId(r.model_id); setPrompt(r.prompt); }} />
+      <aside className="hidden 2xl:block card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-sm">Recent generations</h3>
+          <span className="badge-mute">local</span>
+        </div>
+        <div className="space-y-3">
+          {recent.slice(0, 5).map((r) => (
+            <button key={r.id} onClick={() => setStageRecord(r)} className="block w-full text-left group">
+              <div className="overflow-hidden" style={{ borderRadius: 16 }}>
+                <img src={api.imageUrl(r.image_path)} alt={r.prompt} className="w-full h-32 object-cover img-hover" loading="lazy" />
+              </div>
+              <div className="flex items-center gap-2 mt-1.5 px-0.5">
+                <span className="text-xs font-medium truncate flex-1">{r.model_name}</span>
+                {r.favorite ? <span className="text-rose-400 text-xs">♥</span> : null}
+              </div>
+              <p className="text-[11px] text-mute truncate px-0.5">{r.prompt}</p>
+            </button>
+          ))}
+          {recent.length === 0 && <p className="text-xs text-mute leading-relaxed">Nothing generated yet. Your latest images will show up here, saved on this computer.</p>}
+        </div>
+      </aside>
     </div>
   );
 }

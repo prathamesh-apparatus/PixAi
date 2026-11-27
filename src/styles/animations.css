@@ -1,14 +1,18 @@
-@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
 @keyframes pulseSoft { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
-@keyframes slideIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
-.anim-page { animation: fadeUp 0.28s ease both; }
-.anim-fade { animation: fadeIn 0.35s ease both; }
-.anim-toast { animation: slideIn 0.25s ease both; }
+@keyframes slideIn { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes zoomIn { from { opacity: 0; transform: scale(0.985); } to { opacity: 1; transform: scale(1); } }
+.anim-page { animation: fadeUp 0.35s cubic-bezier(0.4, 0, 0.2, 1) both; }
+.anim-fade { animation: fadeIn 0.4s ease both; }
+.anim-zoom { animation: zoomIn 0.45s cubic-bezier(0.4, 0, 0.2, 1) both; }
+.anim-toast { animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1) both; }
 .skeleton {
-  background: linear-gradient(90deg, #151b30 25%, #1e2745 50%, #151b30 75%);
+  background: linear-gradient(90deg, #161a22 25%, #232a38 50%, #161a22 75%);
   background-size: 800px 100%;
   animation: shimmer 1.4s infinite linear;
 }
 .generating-pulse { animation: pulseSoft 1.6s ease-in-out infinite; }
+.img-hover { transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+.group:hover .img-hover { transform: scale(1.045); }

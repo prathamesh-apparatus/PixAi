@@ -13,9 +13,27 @@ any time by importing a newer workbook, without reinstalling the app.
 npm install
 npm run dev        # Vite + Electron together — the desktop app opens
 npm run dev:web    # UI only in a browser (preview mode, no generation)
-npm test           # 29 automated tests (importer, diff, adapters, history, generation)
+npm test           # automated tests (importer, diff, adapters, history, generation)
 npm run build      # production renderer build into dist/
 ```
+
+## Import the provider workbook (command line)
+
+There is deliberately **no Import page inside the app**. Save the workbook as
+`FabrixAPI1.xlsx` in the project folder (it is git-ignored — it contains API
+keys) and import it from the terminal:
+
+```bash
+npm run import -- .\FabrixAPI1.xlsx               # import + save
+npm run import -- .\FabrixAPI1.xlsx --dry-run     # preview the changes only
+npm run import -- .\FabrixAPI1.xlsx --deactivate  # also deactivate models removed from the workbook
+```
+
+The command prints a full summary (new / updated / removed providers and
+models, credential changes, warnings, unsupported providers), backs up the
+previous configuration, stores API keys encrypted with the OS credential
+store, and writes the same local configuration the app uses. Restart the app
+after importing.
 
 ## Build the Windows installer
 
@@ -37,16 +55,13 @@ and is **not** removed by upgrades or uninstall of the program files.
 
 ## How it works
 
-1. **Import Excel** — pick the current workbook. PixAi finds the inventory
-   sheet by its headers (flexible header matching, merged-cell and
-   blank-provider inheritance handled), filters to image models only
-   (`Image Generation`, `Text to Image generation`, `Text-to-Image`,
-   `Image Generation API`, …), and shows a full **import preview**:
-   new / updated / removed providers and models, credential changes,
-   unsupported providers and validation warnings. Nothing changes until you
-   press **Confirm and Update**; the previous configuration is backed up
-   first and can be restored in Settings. Re-importing the same workbook
-   creates no duplicates.
+1. **Import from the command line** — `npm run import -- .\FabrixAPI1.xlsx`
+   (see above). PixAi finds the inventory sheet by its headers (flexible
+   header matching, merged-cell and blank-provider inheritance handled),
+   filters to image models only (`Image Generation`, `Text to Image
+   generation`, `Text-to-Image`, `Image Generation API`, …), prints the full
+   diff before saving with `--dry-run`, backs up the previous configuration
+   (restorable in Settings), and never creates duplicates on re-import.
 2. **Providers & Models** — see every imported provider/model, enable or
    disable them, replace an API key, run a *connection test* (key/endpoint
    only) or a *model test* (a real minimal generation). A model is only ever
@@ -111,8 +126,7 @@ src/
   components/ Sidebar · Header · ProviderSelector · ModelSelector ·
               PromptEditor · GenerationSettings · ImagePreview ·
               ImageGallery · ImportPreview · Toasts · Modal
-  pages/      CreateImage · History · Favorites · Providers ·
-              ImportExcel · Settings · About
+  pages/      CreateImage · History · Favorites · Providers · Settings
   layouts/    MainLayout.jsx
 tests/        vitest suites + synthetic workbook builder
 config/       image-providers.example.json (shape reference, no real data)
@@ -125,7 +139,10 @@ scripts/      validate-config.js
   covered by automated tests using synthetic workbooks that mirror the
   specified workbook columns, plus mocked provider responses. The Electron app
   itself was launched and verified headlessly (UI loads, SQLite history
-  database created).
+  database created), and the CLI import was run end-to-end against a test
+  workbook (dry-run + real import into the app's real data folder, with the
+  API key verified absent in plaintext from both config and credentials
+  files).
 - **The real `FabrixAPI1.xlsx` has not been supplied yet.** As soon as it is
   available, drop it next to the project (it is git-ignored — it contains
   credentials) and import it in the app; any header/layout surprises in the
