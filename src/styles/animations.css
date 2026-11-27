@@ -36,5 +36,7 @@
 .gem-hue { animation: hueSpin 8s linear infinite; }
 @keyframes zigWave { 0%, 100% { transform: translateY(11px); } 50% { transform: translateY(-11px); } }
 .gen-zig { animation: zigWave 1.7s ease-in-out infinite; }
+@keyframes spokeFade { 0% { opacity: 1; } 100% { opacity: 0.12; } }
+.spinner-spoke { animation: spokeFade 1.2s linear infinite; }
 .img-hover { transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
 .group:hover .img-hover { transform: scale(1.045); }

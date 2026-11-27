@@ -14,24 +14,21 @@ export default function ImagePreview({ record, onRegenerate, onFavoriteChanged, 
   useEffect(() => { setFav(!!(record && record.favorite)); }, [record]);
 
   if (busy) {
-    // Ray's pick: colourful dots travelling up and down in a zigzag wave.
-    // Kept smooth — a slow eased sine-style wave with staggered phases,
-    // not a sharp bounce — over a soft glow, with the gradient progress bar.
-    const DOTS = ['#ffc107', '#ff5252', '#f472b6', '#7c4dff', '#40c4ff', '#69f0ae', '#fb923c'];
+    // Ray's pick: the classic 12-spoke spinner from his reference image —
+    // rounded bars in a circle, fading one after another clockwise.
+    // No dots, no progress line underneath.
     return (
       <div className="card h-full min-h-[380px] flex flex-col items-center justify-center text-center p-6 overflow-hidden relative">
-        <span className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(420px 220px at 50% 42%, rgba(124,58,237,0.13), transparent 70%)' }} />
-        <div className="relative flex items-center gap-[9px] h-12">
-          {DOTS.map((c, i) => (
-            <span key={i} className="gen-zig block w-3 h-3 rounded-full"
-              style={{ background: c, animationDelay: `${i * 0.14}s`, boxShadow: `0 5px 16px ${c}59, inset 0 1px 0 rgba(255,255,255,0.45)` }} />
+        <div className="relative w-14 h-14">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <span key={i} className="absolute inset-0" style={{ transform: `rotate(${i * 30}deg)` }}>
+              <span className="spinner-spoke absolute left-1/2 top-[2px] block w-[3.5px] h-[13px] rounded-full bg-slate-200"
+                style={{ transform: 'translateX(-50%)', animationDelay: `${-i * 0.1}s` }} />
+            </span>
           ))}
         </div>
         <p className="mt-5 font-semibold text-sm relative">Generating your image…</p>
         {statusText && <p className="mt-1 text-xs text-mute relative">{statusText}</p>}
-        <div className="w-56 h-1.5 rounded-full bg-panel2 overflow-hidden mt-5 relative">
-          <div className="gen-bar absolute inset-y-0 w-1/2 rounded-full" style={{ background: 'linear-gradient(90deg,#38bdf8,#8b5cf6,#f472b6)' }} />
-        </div>
       </div>
     );
   }
