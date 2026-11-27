@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Download, RefreshCw, Copy, Heart, Maximize2, ImageIcon, Sparkles } from 'lucide-react';
+import { Download, RefreshCw, Copy, Heart, Maximize2, ImageIcon } from 'lucide-react';
 import Modal from './Modal';
 import { api } from '../services/api';
 import { useToast } from './Toasts';
@@ -14,22 +14,19 @@ export default function ImagePreview({ record, onRegenerate, onFavoriteChanged, 
   useEffect(() => { setFav(!!(record && record.favorite)); }, [record]);
 
   if (busy) {
+    // Processing animation per Ray's reference: five colourful dots bouncing
+    // in a wave (yellow, red, violet, blue, green) on the dark stage.
+    const DOTS = ['#ffc107', '#ff5252', '#7c4dff', '#40c4ff', '#69f0ae'];
     return (
       <div className="card h-full min-h-[380px] flex flex-col items-center justify-center text-center p-6 overflow-hidden relative">
-        <span className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(420px 220px at 50% 42%, rgba(47,123,255,0.16), transparent 70%)' }} />
-        <div className="relative w-24 h-24 flex items-center justify-center">
-          <span className="gen-ring absolute inset-0 rounded-full border border-cyan-400/50" />
-          <span className="gen-ring absolute inset-0 rounded-full border border-blue-500/40" style={{ animationDelay: '0.6s' }} />
-          <span className="gen-ring absolute inset-0 rounded-full border border-violet-500/30" style={{ animationDelay: '1.2s' }} />
-          <div className="gen-float w-14 h-14 flex items-center justify-center text-white relative"
-            style={{ borderRadius: 18, background: 'linear-gradient(140deg,#38e1ff,#2f7bff 55%,#8b5cf6)', boxShadow: '0 12px 30px rgba(47,123,255,0.5), inset 0 1px 0 rgba(255,255,255,0.5)' }}>
-            <Sparkles size={24} />
-          </div>
+        <span className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(420px 220px at 50% 42%, rgba(47,123,255,0.13), transparent 70%)' }} />
+        <div className="relative flex items-end gap-2.5 h-10">
+          {DOTS.map((c, i) => (
+            <span key={c} className="gen-dotwave block w-3.5 h-3.5 rounded-full"
+              style={{ background: c, animationDelay: `${i * 0.13}s`, boxShadow: `0 6px 18px ${c}66, inset 0 1px 0 rgba(255,255,255,0.45)` }} />
+          ))}
         </div>
-        <p className="mt-5 font-semibold text-sm relative">
-          Generating your image
-          <span className="gen-dot">.</span><span className="gen-dot" style={{ animationDelay: '0.2s' }}>.</span><span className="gen-dot" style={{ animationDelay: '0.4s' }}>.</span>
-        </p>
+        <p className="mt-5 font-semibold text-sm relative">Generating your image…</p>
         {statusText && <p className="mt-1 text-xs text-mute relative">{statusText}</p>}
         <div className="skeleton h-1.5 w-56 rounded-full mt-5 relative" />
         <p className="mt-3 text-[11px] text-mute relative">Painting pixels — this usually takes a few seconds.</p>

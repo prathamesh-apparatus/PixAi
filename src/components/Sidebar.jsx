@@ -26,13 +26,23 @@ function NavButton({ item, active, collapsed, onNavigate }) {
 export default function Sidebar({ page, onNavigate, collapsed, onToggle }) {
   return (
     <aside className={`flex flex-col bg-navy transition-all duration-300 ${collapsed ? 'w-[72px]' : 'w-60'}`}>
-      <div className="flex items-center gap-2 px-4 h-16">
-        <Logo collapsed={collapsed} />
-        <button onClick={onToggle} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="ml-auto w-8 h-8 shrink-0 flex items-center justify-center rounded-lg text-mute hover:text-white hover:bg-panel transition-colors">
-          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-        </button>
-      </div>
+      {collapsed ? (
+        <div className="flex flex-col items-center gap-2 py-3.5">
+          <Logo collapsed />
+          <button onClick={onToggle} title="Expand sidebar"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-mute hover:text-white hover:bg-panel transition-colors">
+            <PanelLeftOpen size={16} />
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 px-4 h-16">
+          <Logo collapsed={false} />
+          <button onClick={onToggle} title="Collapse sidebar"
+            className="ml-auto w-8 h-8 shrink-0 flex items-center justify-center rounded-lg text-mute hover:text-white hover:bg-panel transition-colors">
+            <PanelLeftClose size={16} />
+          </button>
+        </div>
+      )}
       <nav className="flex-1 py-2 px-3 space-y-1.5 overflow-y-auto">
         {ITEMS.map((item) => (
           <NavButton key={item.key} item={item} active={page === item.key} collapsed={collapsed} onNavigate={onNavigate} />
