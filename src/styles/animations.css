@@ -22,5 +22,13 @@
 .gen-dot { animation: dotBlink 1.4s ease-in-out infinite; }
 @keyframes dotWave { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-13px); } }
 .gen-dotwave { animation: dotWave 1.15s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { transform: scale(1); opacity: 0.55; } 50% { transform: scale(1.18); opacity: 0.95; } }
+.gen-breathe { animation: breathe 3.4s ease-in-out infinite; }
+@keyframes spinSlow { to { transform: rotate(360deg); } }
+.gen-spin-slow { animation: spinSlow 16s linear infinite; }
+@keyframes barSlide { 0% { transform: translateX(-120%); } 100% { transform: translateX(360%); } }
+.gen-bar { animation: barSlide 1.7s ease-in-out infinite; }
+@keyframes floatSoft { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+.gen-float-soft { animation: floatSoft 3.4s ease-in-out infinite; }
 .img-hover { transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
 .group:hover .img-hover { transform: scale(1.045); }

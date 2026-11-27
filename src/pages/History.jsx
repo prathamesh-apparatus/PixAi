@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import ImageGallery from '../components/ImageGallery';
-import ImagePreview from '../components/ImagePreview';
-import Modal from '../components/Modal';
+import ImageViewer from '../components/ImageViewer';
 import { api } from '../services/api';
 
 export default function HistoryPage({ config, favoritesOnly, onRegenerate }) {
@@ -48,9 +47,8 @@ export default function HistoryPage({ config, favoritesOnly, onRegenerate }) {
       </div>
       <ImageGallery records={records} onChanged={load} onRegenerate={onRegenerate} onPreview={setPreview} />
       {preview && (
-        <Modal title="Preview" wide onClose={() => setPreview(null)}>
-          <ImagePreview record={preview} onRegenerate={(r) => { setPreview(null); onRegenerate(r); }} />
-        </Modal>
+        <ImageViewer record={preview} onClose={() => setPreview(null)}
+          onRegenerate={(r) => { setPreview(null); onRegenerate(r); }} />
       )}
     </div>
   );

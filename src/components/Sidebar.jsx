@@ -1,12 +1,14 @@
 import React from 'react';
-import { Sparkles, History, Heart, Server, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Sparkles, History, Heart, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import Logo from './Logo';
 
+// Providers & Models is intentionally NOT in the sidebar (Ray: the media
+// team works from Create/History/Favorites; provider admin is not a
+// sidebar item). The page code stays in the app, just unlisted.
 const ITEMS = [
   { key: 'create', label: 'Create Image', icon: Sparkles },
   { key: 'history', label: 'Image History', icon: History },
   { key: 'favorites', label: 'Favorites', icon: Heart },
-  { key: 'providers', label: 'Providers & Models', icon: Server },
 ];
 
 function NavButton({ item, active, collapsed, onNavigate }) {

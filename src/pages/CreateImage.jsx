@@ -36,9 +36,10 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
   useEffect(() => { api.historyList({}).then(setRecent).catch(() => {}); }, [result]);
   useEffect(() => {
     if (prefill) {
-      setProviderId(prefill.provider_id); setModelId(prefill.model_id);
-      setPrompt(prefill.prompt); setNegativePrompt(prefill.negative_prompt || '');
+      // Arriving via Regenerate (from History/Favorites): fill the composer
+      // AND immediately generate — one click must visibly do the work.
       onPrefillUsed && onPrefillUsed();
+      regenerateRecord(prefill);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
@@ -62,14 +63,21 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
     } else setCaps({ capabilities: [], supportsNegativePrompt: false, supported: false });
   }, [providerId, modelId]);
 
-  async function generate() {
-    if (!provider || !model) { toast('Select a provider and a model first.', 'warn'); return; }
-    if (provider.adapterSupported === false) { toast('This provider\u2019s adapter is not implemented yet.', 'error'); return; }
-    if (!prompt.trim()) { toast('Write a prompt first.', 'warn'); return; }
+  async function generate(override = null) {
+    const pId = override ? override.providerId : providerId;
+    const mId = override ? override.modelId : modelId;
+    const pr = override ? override.prompt : prompt;
+    const np = override ? override.negativePrompt : negativePrompt;
+    const sv = override ? override.settings : settingValues;
+    const prov = providers.find((p) => p.id === pId) || null;
+    const mdl = prov ? (prov.models || []).find((m) => m.id === mId) || null : null;
+    if (!prov || !mdl) { toast('Select a provider and a model first.', 'warn'); return; }
+    if (prov.adapterSupported === false) { toast('This provider\u2019s adapter is not implemented yet.', 'error'); return; }
+    if (!pr.trim()) { toast('Write a prompt first.', 'warn'); return; }
     const requestId = `req-${Date.now()}`;
     requestRef.current = requestId;
-    setBusy(true); setStatus(`Generating with ${provider.name} · ${model.name}…`);
-    const res = await api.generate({ requestId, providerId, modelId, prompt, negativePrompt, settings: settingValues });
+    setBusy(true); setStatus(`Generating with ${prov.name} · ${mdl.name}…`);
+    const res = await api.generate({ requestId, providerId: pId, modelId: mId, prompt: pr, negativePrompt: np, settings: sv || {} });
     setBusy(false); setStatus('');
     if (res.ok) {
       setResult(res.images[0]);
@@ -83,11 +91,24 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
     }
   }
 
+  /** Regenerate = run it again, right now, with the record's own provider,
+   *  model, prompt and the settings that produced it. */
+  function regenerateRecord(r) {
+    if (busy || !r) return;
+    setProviderId(r.provider_id); setModelId(r.model_id);
+    setPrompt(r.prompt); setNegativePrompt(r.negative_prompt || '');
+    let s = {};
+    try { s = typeof r.settings === 'string' ? JSON.parse(r.settings || '{}') : (r.settings || {}); } catch { s = {}; }
+    generate({ providerId: r.provider_id, modelId: r.model_id, prompt: r.prompt, negativePrompt: r.negative_prompt || '', settings: s });
+  }
+
+  function clearStage() { setStageRecord(null); setResult(null); }
+
   const stage = stageRecord || result;
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-5 items-start">
       <div className="flex flex-col gap-4 min-w-0">
-        <ImagePreview record={stage} busy={busy} statusText={status} onRegenerate={(r) => { setProviderId(r.provider_id); setModelId(r.model_id); setPrompt(r.prompt); }} />
+        <ImagePreview record={stage} busy={busy} statusText={status} onRegenerate={regenerateRecord} onClear={clearStage} />
 
         <div className="card p-4 space-y-3">
           {model && (
@@ -132,7 +153,7 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
             </div>
             <GenerationSettings inline capabilities={caps.capabilities} values={settingValues}
               onChange={(k, v) => setSettingValues((s) => ({ ...s, [k]: v }))} />
-            <button className="btn-primary !px-6 !py-3 ml-auto" onClick={generate} disabled={busy}>
+            <button className="btn-primary !px-6 !py-3 ml-auto" onClick={() => generate()} disabled={busy}>
               <Wand2 size={16} /> {busy ? 'Generating…' : 'Generate Image'}
             </button>
             {busy && (
@@ -161,22 +182,30 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
           <h3 className="font-semibold text-sm">Recent generations</h3>
           <span className="badge-mute">local</span>
         </div>
-        <div className="space-y-4">
-          {recent.slice(0, 5).map((r, i) => (
-            <button key={r.id} onClick={() => setStageRecord(r)} className="block w-full text-left group">
-              <div className="relative overflow-hidden" style={{ borderRadius: 16 }}>
-                <img src={api.imageUrl(r.image_path)} alt={r.prompt} className="w-full h-28 object-cover img-hover" loading="lazy" />
-                <span className="absolute top-2 left-2 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-black/65 text-white">#{i + 1}</span>
-                {r.favorite ? <span className="absolute top-2 right-2 text-rose-400 text-xs">♥</span> : null}
-              </div>
-              <div className="mt-1.5 px-0.5">
-                <span className="text-xs font-semibold truncate block">{r.model_name}</span>
-                <span className="text-[11px] text-mute truncate block">{r.prompt}</span>
-              </div>
-            </button>
-          ))}
-          {recent.length === 0 && <p className="text-xs text-mute leading-relaxed">Nothing generated yet. Your latest images will show up here, saved on this computer.</p>}
-        </div>
+        {recent.length === 0 && <p className="text-xs text-mute leading-relaxed">Nothing generated yet. Your latest images will show up here as a film reel, saved on this computer.</p>}
+        {recent.length > 0 && (
+          <div className="relative">
+            {/* Film-reel sprocket holes down both edges of the strip. */}
+            <div className="absolute left-0 top-0 bottom-0 w-[13px]" style={{ backgroundColor: '#08080a', backgroundImage: 'radial-gradient(circle at 50% 50%, #35373f 2.3px, transparent 3.1px)', backgroundSize: '13px 19px', backgroundRepeat: 'repeat-y', borderRadius: '8px 0 0 8px' }} />
+            <div className="absolute right-0 top-0 bottom-0 w-[13px]" style={{ backgroundColor: '#08080a', backgroundImage: 'radial-gradient(circle at 50% 50%, #35373f 2.3px, transparent 3.1px)', backgroundSize: '13px 19px', backgroundRepeat: 'repeat-y', borderRadius: '0 8px 8px 0' }} />
+            <div className="mx-[13px] px-2 py-2 space-y-3 max-h-[548px] overflow-y-auto scroll-smooth"
+              style={{ background: '#101114', maskImage: 'linear-gradient(180deg, transparent, black 5%, black 95%, transparent)', WebkitMaskImage: 'linear-gradient(180deg, transparent, black 5%, black 95%, transparent)' }}>
+              {recent.slice(0, 8).map((r, i) => (
+                <button key={r.id} onClick={() => setStageRecord(r)} className="block w-full text-left group anim-fade">
+                  <div className="relative overflow-hidden ring-1 ring-white/10" style={{ borderRadius: 10 }}>
+                    <img src={api.imageUrl(r.image_path)} alt={r.prompt} className="w-full h-[104px] object-cover img-hover" loading="lazy" />
+                    <span className="absolute top-1.5 left-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-black/65 text-white">#{i + 1}</span>
+                    {r.favorite ? <span className="absolute top-1.5 right-1.5 text-rose-400 text-xs drop-shadow">♥</span> : null}
+                  </div>
+                  <div className="px-1 pt-1.5">
+                    <span className="text-[11px] font-semibold truncate block">{r.model_name}</span>
+                    <span className="text-[10px] text-mute truncate block">{r.prompt}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </aside>
     </div>
   );

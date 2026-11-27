@@ -1,35 +1,37 @@
 import React, { useEffect, useState } from 'react';
-import { Download, RefreshCw, Copy, Heart, Maximize2, ImageIcon } from 'lucide-react';
-import Modal from './Modal';
+import { Download, RefreshCw, Copy, Heart, Maximize2, ImageIcon, Sparkles, X } from 'lucide-react';
+import ImageViewer from './ImageViewer';
 import { api } from '../services/api';
 import { useToast } from './Toasts';
 
 /** Centre stage, modelled on the DigiArts reference: title bar on top of one
  *  big soft-rounded image card, action bar underneath — favorite pill left,
  *  Preview ghost button, solid blue Download on the right. */
-export default function ImagePreview({ record, onRegenerate, onFavoriteChanged, busy = false, statusText = '' }) {
+export default function ImagePreview({ record, onRegenerate, onFavoriteChanged, onClear, busy = false, statusText = '' }) {
   const toast = useToast();
   const [full, setFull] = useState(false);
   const [fav, setFav] = useState(false);
   useEffect(() => { setFav(!!(record && record.favorite)); }, [record]);
 
   if (busy) {
-    // Processing animation per Ray's reference: five colourful dots bouncing
-    // in a wave (yellow, red, violet, blue, green) on the dark stage.
-    const DOTS = ['#ffc107', '#ff5252', '#7c4dff', '#40c4ff', '#69f0ae'];
+    // Soft, smooth generating visual (Ray: the bouncing dots felt glitchy /
+    // vibrating): a breathing glow, one slow-spinning dashed ring and a
+    // gently floating logo tile, plus a smooth sliding progress bar.
     return (
       <div className="card h-full min-h-[380px] flex flex-col items-center justify-center text-center p-6 overflow-hidden relative">
-        <span className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(420px 220px at 50% 42%, rgba(47,123,255,0.13), transparent 70%)' }} />
-        <div className="relative flex items-end gap-2.5 h-10">
-          {DOTS.map((c, i) => (
-            <span key={c} className="gen-dotwave block w-3.5 h-3.5 rounded-full"
-              style={{ background: c, animationDelay: `${i * 0.13}s`, boxShadow: `0 6px 18px ${c}66, inset 0 1px 0 rgba(255,255,255,0.45)` }} />
-          ))}
+        <div className="relative w-[92px] h-[92px] flex items-center justify-center">
+          <span className="gen-breathe absolute inset-0 rounded-full" style={{ background: 'radial-gradient(circle, rgba(56,225,255,0.26), rgba(47,123,255,0.12) 55%, transparent 72%)' }} />
+          <span className="gen-spin-slow absolute inset-0 rounded-full border border-dashed border-slate-500/40" />
+          <div className="gen-float-soft w-14 h-14 flex items-center justify-center text-white relative"
+            style={{ borderRadius: 18, background: 'linear-gradient(140deg,#38e1ff,#2f7bff 55%,#8b5cf6)', boxShadow: '0 12px 30px rgba(47,123,255,0.45), inset 0 1px 0 rgba(255,255,255,0.5)' }}>
+            <Sparkles size={24} />
+          </div>
         </div>
-        <p className="mt-5 font-semibold text-sm relative">Generating your image…</p>
-        {statusText && <p className="mt-1 text-xs text-mute relative">{statusText}</p>}
-        <div className="skeleton h-1.5 w-56 rounded-full mt-5 relative" />
-        <p className="mt-3 text-[11px] text-mute relative">Painting pixels — this usually takes a few seconds.</p>
+        <p className="mt-5 font-semibold text-sm">Generating your image…</p>
+        {statusText && <p className="mt-1 text-xs text-mute">{statusText}</p>}
+        <div className="w-56 h-1.5 rounded-full bg-panel2 overflow-hidden mt-5 relative">
+          <div className="gen-bar absolute inset-y-0 w-1/3 rounded-full" style={{ background: 'linear-gradient(90deg,#38e1ff,#2f7bff,#8b5cf6)' }} />
+        </div>
       </div>
     );
   }
@@ -51,6 +53,11 @@ export default function ImagePreview({ record, onRegenerate, onFavoriteChanged, 
         <h3 className="font-semibold text-sm truncate flex-1">{record.model_name}</h3>
         <span className="badge-mute hidden sm:inline-flex">{new Date(record.created_at).toLocaleString()}</span>
         <button className="btn-ghost !px-2.5 !py-1.5" onClick={() => setFull(true)} title="Full screen preview"><Maximize2 size={14} /></button>
+        {onClear && (
+          <button className="btn-ghost !px-2.5 !py-1.5" onClick={onClear} title="Clear the stage (the image stays in History and Documents)">
+            <X size={14} />
+          </button>
+        )}
       </div>
       <div className="relative bg-black/40">
         <img src={url} alt={record.prompt} className="w-full max-h-[520px] object-contain anim-fade" key={record.id} />
@@ -83,10 +90,8 @@ export default function ImagePreview({ record, onRegenerate, onFavoriteChanged, 
         </button>
       </div>
       {full && (
-        <Modal title={record.model_name} wide onClose={() => setFull(false)}>
-          <img src={url} alt={record.prompt} className="w-full object-contain max-h-[72vh]" style={{ borderRadius: 16 }} />
-          <p className="text-sm text-mute mt-3 leading-relaxed">{record.prompt}</p>
-        </Modal>
+        <ImageViewer record={record} onClose={() => setFull(false)}
+          onRegenerate={onRegenerate ? (r) => { setFull(false); onRegenerate(r); } : undefined} />
       )}
     </div>
   );
