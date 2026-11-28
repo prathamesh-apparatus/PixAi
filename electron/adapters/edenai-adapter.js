@@ -39,7 +39,15 @@ function findImage(value, depth = 0) {
         return { buffer: Buffer.from(s.slice(s.indexOf(',') + 1), 'base64'), format: s.includes('image/png') ? 'png' : 'jpg' };
       }
       if (/^https?:\/\//i.test(s)) return { remoteUrl: s, format: 'png' };
-      if (s.length > 200) return { buffer: Buffer.from(s, 'base64'), format: 'png' };
+      // Raw base64: accept only if it actually decodes to image magic bytes
+      // (PNG / JPEG / WebP) — a length guess misfires on small images.
+      if (s.length >= 40 && /^[A-Za-z0-9+/=\r\n ]+$/.test(s)) {
+        const buf = Buffer.from(s, 'base64');
+        const isPng = buf.length > 3 && buf[0] === 0x89 && buf[1] === 0x50;
+        const isJpg = buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8;
+        const isWebp = buf.length > 11 && buf[0] === 0x52 && buf[1] === 0x49 && buf[8] === 0x57 && buf[9] === 0x45;
+        if (isPng || isJpg || isWebp) return { buffer: buf, format: isJpg ? 'jpg' : 'png' };
+      }
     }
     for (const v of Object.values(value)) { const hit = findImage(v, depth + 1); if (hit) return hit; }
   }
