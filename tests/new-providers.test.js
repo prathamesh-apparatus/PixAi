@@ -129,6 +129,18 @@ describe('eden ai adapter (universal-ai)', () => {
     await expect(new EdenAiAdapter().generate({ provider, model, apiKey: 'k', prompt: 'x', settings: {}, fetchImpl }))
       .rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
   });
+  it('does NOT double-append /universal-ai when the workbook base URL already is the full endpoint', async () => {
+    let seenUrl = '';
+    const fetchImpl = fakeFetch(async (url) => {
+      seenUrl = url;
+      return res({ ctype: 'application/json', jsonBody: { status: 'success', output: { items: [{ image: PNG_1PX.toString('base64') }] } } });
+    });
+    const out = await new EdenAiAdapter().generate({
+      provider: { baseUrl: 'https://api.edenai.run/v3/universal-ai' }, model, apiKey: 'k', prompt: 'a temple', settings: {}, fetchImpl,
+    });
+    expect(seenUrl).toBe('https://api.edenai.run/v3/universal-ai');
+    expect(out[0].buffer.equals(PNG_1PX)).toBe(true);
+  });
 });
 
 describe('nvidia adapter content filter', () => {
@@ -138,6 +150,17 @@ describe('nvidia adapter content filter', () => {
       provider: { baseUrl: 'https://integrate.api.nvidia.com/v1' },
       model: { vendorModelId: 'black-forest-labs/flux-3-image-klein' },
       apiKey: 'k', prompt: 'a temple', settings: {}, fetchImpl,
+    })).rejects.toMatchObject({ code: 'CONTENT_FILTERED' });
+  });
+});
+
+describe('pollinations content filter', () => {
+  it('HTTP 502 "User Input Error" maps to CONTENT_FILTERED with a plain message', async () => {
+    const fetchImpl = fakeFetch(async () => ({ ok: false, status: 502, headers: { get: () => 'text/plain' }, text: async () => 'User Input Error', arrayBuffer: async () => new ArrayBuffer(0), json: async () => ({}) }));
+    await expect(new PollinationsAdapter().generate({
+      provider: { baseUrl: 'https://gen.pollinations.ai' },
+      model: { vendorModelId: 'black-forest-labs/flux.1-schnell' },
+      apiKey: 'sk', prompt: 'a flaming skull rider', settings: {}, fetchImpl,
     })).rejects.toMatchObject({ code: 'CONTENT_FILTERED' });
   });
 });

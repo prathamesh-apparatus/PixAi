@@ -65,6 +65,21 @@ function findFailure(value, depth = 0) {
   return '';
 }
 
+/**
+ * The workbook's Eden Base URL is the FULL endpoint
+ * ("https://api.edenai.run/v3/universal-ai"), not the API root — appending
+ * "/universal-ai" again produced /v3/universal-ai/universal-ai and Eden's
+ * FastAPI 404 {"detail":"Not Found"} (reproduced live 2026-11-28). Accept
+ * both forms: root → append, full endpoint → use as-is.
+ */
+function universalAiUrl(baseUrl) {
+  const base = (String(baseUrl || 'https://api.edenai.run/v3')).replace(/\/+$/, '');
+  return base.endsWith('/universal-ai') ? base : `${base}/universal-ai`;
+}
+function apiRoot(baseUrl) {
+  return (String(baseUrl || 'https://api.edenai.run/v3')).replace(/\/+$/, '').replace(/\/universal-ai$/, '');
+}
+
 class EdenAiAdapter extends BaseAdapter {
   constructor() { super(); this.id = 'edenai'; this.displayName = 'Eden AI'; }
 
@@ -83,8 +98,7 @@ class EdenAiAdapter extends BaseAdapter {
 
   async generate({ provider, model, apiKey, prompt, settings = {}, fetchImpl = fetch, signal, timeoutMs }) {
     if (!apiKey) throw new AdapterError('No API key saved for this provider. Re-run the import command with a workbook that contains the key, or add it in Settings.', { code: 'AUTH_FAILED' });
-    const base = (provider.baseUrl || 'https://api.edenai.run/v3').replace(/\/+$/, '');
-    const url = `${base}/universal-ai`;
+    const url = universalAiUrl(provider.baseUrl);
     const body = {
       model: model.vendorModelId,
       input: {
@@ -136,12 +150,11 @@ class EdenAiAdapter extends BaseAdapter {
   async testConnection({ provider, apiKey, fetchImpl = fetch }) {
     if (!apiKey) return { ok: false, message: 'No API key saved for this provider.' };
     try {
-      const base = (provider.baseUrl || 'https://api.edenai.run/v3').replace(/\/+$/, '');
-      const res = await fetchWithTimeout(fetchImpl, `${base}/images/models`, { headers: { Authorization: `Bearer ${apiKey}` } }, 20000);
+      const res = await fetchWithTimeout(fetchImpl, `${apiRoot(provider.baseUrl)}/images/models`, { headers: { Authorization: `Bearer ${apiKey}` } }, 20000);
       if (res.status === 401 || res.status === 403) return { ok: false, message: 'Authentication failed — the Eden AI key was rejected.' };
       if (res.ok) return { ok: true, message: 'Eden AI key accepted. Use Test model for a real generation check.' };
       return { ok: false, message: `Eden AI answered HTTP ${res.status}.` };
     } catch (e) { return { ok: false, message: e.message }; }
   }
 }
-module.exports = { EdenAiAdapter, findImage, findFailure };
+module.exports = { EdenAiAdapter, findImage, findFailure, universalAiUrl };

@@ -46,7 +46,16 @@ class PollinationsAdapter extends BaseAdapter {
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
     const res = await fetchWithTimeout(fetchImpl, url, { method: 'GET', headers }, timeoutMs, signal);
     const ctype = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
-    if (!res.ok) throw mapHttpError(res.status, await res.text());
+    if (!res.ok) {
+      const text = await res.text();
+      // Pollinations answers filtered/refused prompts with HTTP 502
+      // "User Input Error" — that is its content filter, not an outage.
+      // Report it as such (and leave the model's tested state untouched).
+      if (/user input error/i.test(text)) {
+        throw new AdapterError('Pollinations refused this prompt (User Input Error) — its content filter rejected the wording. Try rephrasing the prompt.', { code: 'CONTENT_FILTERED', status: res.status, diagnostic: `HTTP ${res.status}: User Input Error` });
+      }
+      throw mapHttpError(res.status, text);
+    }
     if (/json/i.test(ctype)) {
       const t = await res.text();
       throw new AdapterError('Pollinations returned a message instead of an image.', { code: 'BAD_RESPONSE', diagnostic: t.slice(0, 200) });
