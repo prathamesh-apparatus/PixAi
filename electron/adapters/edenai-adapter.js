@@ -12,10 +12,16 @@ const { BaseAdapter, AdapterError, mapHttpError, fetchWithTimeout } = require('.
  *    the Fabrix workbook carries (e.g.
  *    "image/generation/ovhcloud/stable-diffusion-xl-base-v10") — and answers
  *    with { image, image_resource_url } fields somewhere in the JSON.
- * The workbook model lives on universal-ai, so this adapter posts there:
- * body { model, text, resolution, num_images }, Bearer key. The image is
- * located by a recursive search for image_resource_url / image, the same
- * extraction Ray's own working PowerShell test performs.
+ * The workbook model lives on universal-ai, so this adapter posts there.
+ * VERIFIED LIVE 2026-11-28 with the workbook key + model string: the
+ * feature inputs must be nested under an "input" object — a flat body is
+ * rejected with HTTP 422 {"field":"input","message":"Field required"}.
+ *   body { model, input: { text, resolution, num_images } }
+ * Success answers HTTP 200:
+ *   { status: "success", cost: "0E-9", provider: "ovhcloud",
+ *     output: { items: [ { image: "<base64 PNG>", image_resource_url }] } }
+ * The image is located by a recursive search for image_resource_url /
+ * image, the same extraction Ray's own working PowerShell test performs.
  */
 function findImage(value, depth = 0) {
   if (value == null || depth > 8) return null;
@@ -73,9 +79,11 @@ class EdenAiAdapter extends BaseAdapter {
     const url = `${base}/universal-ai`;
     const body = {
       model: model.vendorModelId,
-      text: prompt,
-      resolution: this.resolutionFor(settings),
-      num_images: 1,
+      input: {
+        text: prompt,
+        resolution: this.resolutionFor(settings),
+        num_images: 1,
+      },
     };
     const res = await fetchWithTimeout(fetchImpl, url, {
       method: 'POST',
@@ -83,7 +91,19 @@ class EdenAiAdapter extends BaseAdapter {
       body: JSON.stringify(body),
     }, timeoutMs, signal);
     const text = await res.text();
-    if (!res.ok) throw mapHttpError(res.status, text);
+    if (!res.ok) {
+      // Eden's validation errors carry { detail, errors: [{field, message}] }
+      // — surface those words instead of a generic failure.
+      try {
+        const j = JSON.parse(text);
+        if (j && (j.detail || Array.isArray(j.errors))) {
+          const parts = (j.errors || []).map((e) => `${e.field || 'request'}: ${e.message || ''}`.trim());
+          const msg = parts.length ? parts.join('; ') : String(j.detail);
+          throw new AdapterError(`Eden AI rejected the request (${msg}).`, { code: 'INVALID_REQUEST', status: res.status, diagnostic: `HTTP ${res.status}: ${msg}` });
+        }
+      } catch (e) { if (e instanceof AdapterError) throw e; }
+      throw mapHttpError(res.status, text);
+    }
     let j;
     try { j = JSON.parse(text); } catch {
       throw new AdapterError('Eden AI returned a non-JSON response.', { code: 'BAD_RESPONSE', diagnostic: text.slice(0, 200) });

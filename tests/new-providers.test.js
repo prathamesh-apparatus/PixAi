@@ -107,17 +107,21 @@ describe('puter adapter', () => {
 describe('eden ai adapter (universal-ai)', () => {
   const provider = { baseUrl: 'https://api.edenai.run/v3' };
   const model = { vendorModelId: 'image/generation/ovhcloud/stable-diffusion-xl-base-v10' };
-  it('posts the workbook model string to /v3/universal-ai and extracts image_resource_url from anywhere in the JSON', async () => {
+  it('posts the workbook model string with inputs nested under "input" and decodes output.items[].image (the live-verified shape)', async () => {
     let seenUrl = ''; let seenBody = null;
     const fetchImpl = fakeFetch(async (url, opts) => {
       seenUrl = url; seenBody = JSON.parse(opts.body);
-      return res({ ctype: 'application/json', jsonBody: { status: 'success', results: { ovhcloud: { status: 'success', image: 'x', image_resource_url: 'https://cdn.example/img.png' } } } });
+      return res({ ctype: 'application/json', jsonBody: { status: 'success', cost: '0E-9', provider: 'ovhcloud', output: { items: [{ image: PNG_1PX.toString('base64') }] } } });
     });
     const out = await new EdenAiAdapter().generate({ provider, model, apiKey: 'k', prompt: 'a temple', settings: {}, fetchImpl });
     expect(seenUrl).toBe('https://api.edenai.run/v3/universal-ai');
     expect(seenBody.model).toBe('image/generation/ovhcloud/stable-diffusion-xl-base-v10');
-    expect(seenBody.text).toBe('a temple');
-    expect(seenBody.resolution).toBe('1024x1024');
+    expect(seenBody.input).toEqual({ text: 'a temple', resolution: '1024x1024', num_images: 1 });
+    expect(out[0].buffer.equals(PNG_1PX)).toBe(true);
+  });
+  it('also accepts an image_resource_url anywhere in the JSON', async () => {
+    const fetchImpl = fakeFetch(async () => res({ ctype: 'application/json', jsonBody: { status: 'success', results: { ovhcloud: { status: 'success', image_resource_url: 'https://cdn.example/img.png' } } } }));
+    const out = await new EdenAiAdapter().generate({ provider, model, apiKey: 'k', prompt: 'a temple', settings: {}, fetchImpl });
     expect(out[0].remoteUrl).toBe('https://cdn.example/img.png');
   });
   it('surfaces a nested provider failure with its real message', async () => {
