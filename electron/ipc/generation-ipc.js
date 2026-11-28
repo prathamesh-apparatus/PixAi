@@ -30,8 +30,9 @@ function registerGenerationIpc(ctx) {
     const prompt = str(payload.prompt, { max: 4000, name: 'prompt' });
     const negativePrompt = payload.negativePrompt ? str(payload.negativePrompt, { max: 2000, name: 'negativePrompt' }) : '';
     const settings = payload.settings && typeof payload.settings === 'object' ? payload.settings : {};
+    const category = payload.category ? str(payload.category, { max: 40, name: 'category' }) : '';
     try {
-      const out = await generationService.generate({ requestId, providerId, modelId, prompt, negativePrompt, settings });
+      const out = await generationService.generate({ requestId, providerId, modelId, prompt, negativePrompt, settings, category });
       return { ok: true, ...out };
     } catch (e) {
       return { ok: false, error: e.message, code: e.code || 'ERROR', diagnostic: e.diagnostic || '' };

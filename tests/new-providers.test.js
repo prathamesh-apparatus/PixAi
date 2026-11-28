@@ -252,9 +252,11 @@ describe('auto model ranking', () => {
     { id: 'cloudflare-workers-ai-main', name: 'cloudflare', status: 'active', adapterSupported: true, models: [{ id: 'c::flux', name: 'CF Flux', vendorModelId: '@cf/flux', status: 'active', testState: 'quota-exhausted' }] },
     { id: 'puter', name: 'Puter', status: 'active', adapterSupported: false, models: [{ id: 'pu::flux', name: 'Puter Flux', vendorModelId: 'black-forest-labs/flux-schnell', status: 'active', testState: 'not-tested' }] },
   ];
-  it('orders free first, paid last, and skips unsupported providers', () => {
+  it('v13 scoring: free first; a quota-exhausted model is benched to the tail for the day', () => {
+    // CF Flux is quota-exhausted with no reset recorded — the router benches
+    // it behind even the tested-ok paid model instead of wasting an attempt.
     const ranked = rankCandidates(providers);
-    expect(ranked.map((c) => c.modelId)).toEqual(['p::flux', 'c::flux', 'o::paid']);
+    expect(ranked.map((c) => c.modelId)).toEqual(['p::flux', 'o::paid', 'c::flux']);
     expect(costTier(providers[0], providers[0].models[0])).toBe(3);
   });
   it('preferred model goes first for regenerate, rest stay in auto order', () => {

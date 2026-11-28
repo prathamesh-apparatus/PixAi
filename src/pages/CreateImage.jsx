@@ -4,8 +4,19 @@ import PromptEditor from '../components/PromptEditor';
 import ImagePreview from '../components/ImagePreview';
 import { api } from '../services/api';
 import { useToast } from '../components/Toasts';
-import { rankCandidates, candidatesWithPreferred } from '../utils/modelRank';
+import { rankCandidates, candidatesWithPreferred, priceClass, classifyCategory } from '../utils/modelRank';
+import { compilePrompt } from '../utils/promptCompiler';
 import { MODES, getMode, applyMode, ASPECTS, sizeForAspect } from '../utils/modes';
+
+const AUTO_BUDGET_MS = 120000; // total wall-clock budget for one auto run
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Only transient failures earn one retry on the SAME model: provider 5xx,
+ *  timeouts, network errors. Quota/auth/not-found/content-filter never do. */
+function isTransient(res) {
+  if (!res) return false;
+  if (res.code === 'PROVIDER_UNAVAILABLE') return true;
+  return /timeout|timed out|network|fetch failed|socket|econn|aborted/i.test(`${res.diagnostic || ''} ${res.error || ''}`);
+}
 
 const MODE_ICONS = {
   generate: Wand2, edit: Pencil, upscale: ChevronsUp, skin: Sparkles,
@@ -48,6 +59,9 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
   const fileRef = useRef(null);
 
   const modeDef = getMode(mode);
+  // Free-Only is ON unless Ray explicitly turns it off in Settings: paid or
+  // unpriced models are then never called — not even as a fallback.
+  const freeOnly = !settings || settings.freeOnly !== false;
   const activeProviders = providers.filter((p) => p.enabled !== false && p.status === 'active');
   const manualProvider = activeProviders.find((p) => p.id === providerId) || null;
   const manualModels = manualProvider ? (manualProvider.models || []).filter((m) => m.enabled !== false && m.status === 'active') : [];
@@ -82,24 +96,46 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
     reader.readAsDataURL(f);
   }
 
-  /** Try candidates in auto order until one generates. Returns a result
-   *  object, { cancelled: true }, or { failures: [...] } when all failed. */
-  async function runAuto(finalPrompt, genSettings, preferred) {
+  /** Try candidates in scored order until one generates. Each attempt is
+   *  prompt-compiled for that model's dialect; a transient failure earns
+   *  one retry on the same model; the whole run has a time budget.
+   *  Returns a result object, { cancelled: true }, or { failures: [...] }. */
+  async function runAuto(finalPrompt, genSettings, preferred, meta = {}) {
+    const category = meta.category || 'general';
+    const opts = { freeOnly, category, prompt: finalPrompt };
     const candidates = preferred
-      ? candidatesWithPreferred(providers, preferred.providerId, preferred.modelId)
-      : rankCandidates(providers);
+      ? candidatesWithPreferred(providers, preferred.providerId, preferred.modelId, opts)
+      : rankCandidates(providers, opts);
     if (!candidates.length) {
-      toast('No model is configured yet — import the workbook (Settings → Upload Excel, or the import command) first.', 'warn');
+      if (candidates.blockedPaid) {
+        toast('Free-Only is on and every configured model is paid or unpriced — add a free model in Settings, or turn Free-Only off there to use paid ones.', 'warn');
+      } else {
+        toast('No model is configured yet — import the workbook (Settings → Upload Excel, or the import command) first.', 'warn');
+      }
       return null;
     }
     const failures = [];
+    const startedAt = Date.now();
     for (let i = 0; i < candidates.length; i++) {
       if (cancelRef.current) return { cancelled: true };
+      if (i > 0 && Date.now() - startedAt > AUTO_BUDGET_MS) {
+        failures.push({ candidate: { modelName: 'Auto engine' }, error: `Stopped after ${Math.round(AUTO_BUDGET_MS / 1000)}s — the remaining models were not tried, to avoid burning free quota on a slow run.`, diagnostic: '' });
+        break;
+      }
       const c = candidates[i];
+      const compiled = compilePrompt({ prompt: finalPrompt, category, candidate: c });
       setStatus(candidates.length > 1 ? `Trying ${c.modelName} — attempt ${i + 1} of ${candidates.length}…` : `Generating with ${c.modelName}…`);
-      const requestId = `req-${Date.now()}-${i}`;
+      let requestId = `req-${Date.now()}-${i}`;
       requestRef.current = requestId;
-      const res = await api.generate({ requestId, providerId: c.providerId, modelId: c.modelId, prompt: finalPrompt, negativePrompt: '', settings: genSettings });
+      let res = await api.generate({ requestId, providerId: c.providerId, modelId: c.modelId, prompt: compiled.prompt, negativePrompt: compiled.negativePrompt, settings: genSettings, category });
+      if (!res.ok && res.code !== 'CANCELLED' && isTransient(res) && !cancelRef.current) {
+        setStatus(`${c.modelName} hit a temporary error — retrying it once…`);
+        await sleep(1500);
+        if (cancelRef.current) return { cancelled: true };
+        requestId = `req-${Date.now()}-${i}r`;
+        requestRef.current = requestId;
+        res = await api.generate({ requestId, providerId: c.providerId, modelId: c.modelId, prompt: compiled.prompt, negativePrompt: compiled.negativePrompt, settings: genSettings, category });
+      }
       if (res.ok && res.images && res.images.length) return { res, candidate: c, attempts: i + 1, failures };
       if (res.code === 'CANCELLED') return { cancelled: true };
       failures.push({ candidate: c, error: res.error || 'Generation failed.', diagnostic: res.diagnostic || '' });
@@ -126,15 +162,22 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
   }
 
   /** Manual test path: exactly the chosen model, no fallback — its real
-   *  result or real error is what gets reported. */
-  async function runManual(finalPrompt, genSettings) {
+   *  result or real error is what gets reported. Free-Only still applies:
+   *  a paid/unpriced model is not called even here. */
+  async function runManual(finalPrompt, genSettings, category = 'general') {
+    const pc = priceClass(manualProvider, manualModel);
+    if (freeOnly && pc !== 'free') {
+      toast(`Free-Only is on — ${manualModel.name} is ${pc === 'paid' ? 'a paid model' : 'not confirmed free'}, so it was not called. Turn Free-Only off in Settings to test it.`, 'warn');
+      return;
+    }
+    const compiled = compilePrompt({ prompt: finalPrompt, category, candidate: { vendorModelId: manualModel.vendorModelId, adapter: manualProvider.adapter, providerId } });
     const made = [];
     for (let n = 0; n < count; n++) {
       if (cancelRef.current) break;
       setStatus(`Generating with ${manualModel.name} (manual test)…`);
       const requestId = `req-${Date.now()}-m${n}`;
       requestRef.current = requestId;
-      const res = await api.generate({ requestId, providerId, modelId, prompt: finalPrompt, negativePrompt: '', settings: genSettings });
+      const res = await api.generate({ requestId, providerId, modelId, prompt: compiled.prompt, negativePrompt: compiled.negativePrompt, settings: genSettings, category });
       if (res.ok && res.images && res.images.length) { made.push(...res.images); continue; }
       if (res.code === 'CANCELLED') break;
       toast(res.error || 'Generation failed.', 'error');
@@ -166,13 +209,14 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
         toast(`Prompt built from your reference image by ${v.visionModelName}.`, 'info');
       }
       const { prompt: finalPrompt } = applyMode(mode, basePrompt, { optionId: modeOption, backgroundText });
+      const category = classifyCategory(basePrompt, mode);
       const genSettings = {};
       if (aspect !== 'Auto') { genSettings.aspectRatio = aspect; genSettings.size = sizeForAspect(aspect); }
-      if (selectionMode === 'manual') { await runManual(finalPrompt, genSettings); return; }
+      if (selectionMode === 'manual') { await runManual(finalPrompt, genSettings, category); return; }
       const made = [];
       let firstOut = null;
       for (let n = 0; n < count; n++) {
-        const out = await runAuto(finalPrompt, genSettings, null);
+        const out = await runAuto(finalPrompt, genSettings, null, { category });
         if (!out) break;
         if (out.cancelled) break;
         if (out.failures) { if (n === 0) reportAllFailed(out.failures); break; }
@@ -200,7 +244,7 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
     try { s = typeof r.settings === 'string' ? JSON.parse(r.settings || '{}') : (r.settings || {}); } catch { s = {}; }
     setBusy(true); cancelRef.current = false; setStatus('');
     try {
-      const out = await runAuto(r.prompt, s, { providerId: r.provider_id, modelId: r.model_id });
+      const out = await runAuto(r.prompt, s, { providerId: r.provider_id, modelId: r.model_id }, { category: classifyCategory(r.prompt, 'generate') });
       if (out && out.res) {
         setResult(out.res.images[0]);
         setStageRecord(out.res.images[0]);
@@ -297,7 +341,11 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
                   <label className="label">Model</label>
                   <select className="input" value={modelId} onChange={(e) => setModelId(e.target.value)} disabled={!manualProvider}>
                     <option value="">{manualProvider ? 'Select a model…' : 'Select a provider first'}</option>
-                    {manualModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    {manualModels.map((m) => {
+                      const pc = priceClass(manualProvider, m);
+                      const blocked = freeOnly && pc !== 'free';
+                      return <option key={m.id} value={m.id} disabled={blocked}>{m.name}{blocked ? (pc === 'paid' ? ' — paid (Free-Only)' : ' — unpriced (Free-Only)') : ''}</option>;
+                    })}
                   </select>
                 </div>
               </div>
@@ -339,7 +387,7 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
               <p className="text-xs text-mute py-2.5 truncate" title={lastUsed || ''}>
                 {selectionMode === 'manual'
                   ? (manualModel ? manualModel.name : 'Pick a provider + model above')
-                  : (lastUsed ? `Last: ${lastUsed}` : 'Cheapest working model first — switches automatically if one fails.')}
+                  : (lastUsed ? `Last: ${lastUsed}` : (freeOnly ? 'Free-Only ON — best free model for this prompt first; paid models are never called.' : 'Best-scoring model for this prompt first — switches automatically if one fails.'))}
               </p>
             </div>
             <button className="btn-primary !px-6 !py-3 ml-auto" onClick={generate} disabled={busy}>

@@ -37,12 +37,36 @@ class GenerationService {
       if (m) { m.testState = state; m.lastTestedAt = new Date().toISOString(); }
     });
   }
+  /**
+   * Record a real generation outcome on the model (v13 learning loop):
+   * success/failure counts overall and per prompt category, an EWMA of
+   * latency, and a cooldown after rate-limit (90 s) or free-quota
+   * exhaustion (until local midnight — free tiers reset daily). The
+   * renderer's scoring router reads these on the next run.
+   */
+  _recordOutcome(providerId, modelId, { ok, ms, code, category }) {
+    this.configManager.update((cfg) => {
+      const p = cfg.providers.find((x) => x.id === providerId);
+      const m = p && (p.models || []).find((x) => x.id === modelId);
+      if (!m) return;
+      const s = m.stats || (m.stats = { ok: 0, fail: 0, avgMs: 0, byCategory: {} });
+      if (ok) s.ok++; else s.fail++;
+      if (ms > 0) s.avgMs = s.avgMs ? Math.round(s.avgMs * 0.7 + ms * 0.3) : Math.round(ms);
+      if (category) {
+        const c = s.byCategory[category] || (s.byCategory[category] = { ok: 0, fail: 0 });
+        if (ok) c.ok++; else c.fail++;
+      }
+      if (ok) m.cooldownUntil = null;
+      else if (code === 'RATE_LIMITED') m.cooldownUntil = new Date(Date.now() + 90000).toISOString();
+      else if (code === 'QUOTA_EXHAUSTED') { const d = new Date(); d.setHours(24, 0, 0, 0); m.cooldownUntil = d.toISOString(); }
+    });
+  }
   cancel(requestId) {
     const ctrl = this.inFlight.get(requestId);
     if (ctrl) { ctrl.abort(); return true; }
     return false;
   }
-  async generate({ requestId, providerId, modelId, prompt, negativePrompt = '', settings = {} }) {
+  async generate({ requestId, providerId, modelId, prompt, negativePrompt = '', settings = {}, category = '' }) {
     if (!prompt || !String(prompt).trim()) throw new AdapterError('Enter a prompt first.', { code: 'INVALID_REQUEST' });
     const config = this.configManager.load();
     const { provider, model } = this._find(config, providerId, modelId);
@@ -59,6 +83,7 @@ class GenerationService {
     const apiKey = this.credentialManager.getKey(provider.id);
     const ctrl = new AbortController();
     if (requestId) this.inFlight.set(requestId, ctrl);
+    const startedAt = Date.now();
     try {
       const results = await adapter.generate({
         provider, model, apiKey, prompt: String(prompt).trim(),
@@ -80,10 +105,16 @@ class GenerationService {
         saved.push({ ...rec, fileName: file.name });
       }
       this._setTestState(provider.id, model.id, 'tested-ok');
+      this._recordOutcome(provider.id, model.id, { ok: true, ms: Date.now() - startedAt, category });
       return { images: saved, providerName: provider.name, modelName: model.name };
     } catch (e) {
       const state = ERROR_TO_TEST_STATE[e.code];
       if (state) this._setTestState(provider.id, model.id, state);
+      // A content-filter refusal says nothing about the model's health —
+      // the prompt was refused, not the model — so it is not recorded.
+      if (e.code !== 'CONTENT_FILTERED' && e.code !== 'CANCELLED') {
+        this._recordOutcome(provider.id, model.id, { ok: false, ms: Date.now() - startedAt, code: e.code, category });
+      }
       throw e;
     } finally {
       if (requestId) this.inFlight.delete(requestId);

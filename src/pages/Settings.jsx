@@ -176,6 +176,14 @@ export default function Settings({ config, settings, onSettings, onRefresh }) {
 
       <div className="card p-5 space-y-3">
         <h3 className="font-semibold">Configuration</h3>
+        <label className="flex items-start gap-3 rounded-xl bg-navy border border-line px-3.5 py-3 cursor-pointer">
+          <input type="checkbox" className="mt-0.5" checked={settings.freeOnly !== false}
+            onChange={(e) => set({ freeOnly: e.target.checked })} />
+          <span>
+            <span className="text-sm font-medium block">Free-Only mode</span>
+            <span className="text-xs text-mute block leading-relaxed">On (recommended): the app uses only models confirmed free — paid or unpriced models are never called, not even as a fallback, in Auto or Manual. Turn off only if you accept per-image billing on paid models.</span>
+          </span>
+        </label>
         <div className="flex flex-wrap gap-2">
           <button className="btn-ghost" onClick={async () => { const r = await api.exportConfig(); if (r.ok) toast('Configuration exported (no credentials included).', 'success'); }}>Export configuration</button>
           <button className="btn-ghost !border-rose-500/50 !text-rose-200" onClick={() => setConfirmClear(true)}>Clear history</button>

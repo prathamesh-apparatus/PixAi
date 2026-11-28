@@ -101,6 +101,33 @@ describe('generation service (end-to-end with a mocked provider)', () => {
     expect(configManager.load().providers[0].models[0].testState).toBe('auth-failed');
   });
 
+  it('v13 learning loop: outcomes are recorded per category; a 429 sets a cooldown', async () => {
+    const { configManager, generationService } = setup();
+    global.fetch = async () => ({
+      ok: true, status: 200, headers: { get: () => 'application/json' },
+      json: async () => ({ data: [{ b64_json: PNG_1PX.toString('base64') }] }),
+      text: async () => '', arrayBuffer: async () => new ArrayBuffer(0),
+    });
+    const cfg = configManager.load();
+    const pid = cfg.providers[0].id; const mid = cfg.providers[0].models[0].id;
+    await generationService.generate({ requestId: 'r3', providerId: pid, modelId: mid, prompt: 'a cartoon cat', settings: {}, category: 'cartoon' });
+    let m = configManager.load().providers[0].models[0];
+    expect(m.stats.ok).toBe(1);
+    expect(m.stats.byCategory.cartoon.ok).toBe(1);
+    expect(m.stats.avgMs).toBeGreaterThan(0);
+    expect(m.cooldownUntil).toBeFalsy();
+    global.fetch = async () => ({
+      ok: false, status: 429, headers: { get: () => 'application/json' },
+      text: async () => '{"error":{"message":"slow down"}}',
+      json: async () => ({}), arrayBuffer: async () => new ArrayBuffer(0),
+    });
+    await expect(generationService.generate({ requestId: 'r4', providerId: pid, modelId: mid, prompt: 'x', settings: {}, category: 'cartoon' }))
+      .rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    m = configManager.load().providers[0].models[0];
+    expect(m.stats.fail).toBe(1);
+    expect(Date.parse(m.cooldownUntil)).toBeGreaterThan(Date.now());
+  });
+
   it('an unsupported-adapter provider fails loudly instead of pretending', async () => {
     const configManager = new ConfigManager(dir);
     const credentialManager = new CredentialManager(path.join(dir, 'credentials'), null);
