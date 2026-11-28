@@ -9,8 +9,13 @@ const { BaseAdapter, AdapterError, mapHttpError, fetchWithTimeout } = require('.
  * PowerShell):
  *   POST https://api.puter.com/drivers/call
  *   Authorization: Bearer <account token>
- *   { interface: 'puter-image-generation', driver: 'ai-chat',
+ *   { interface: 'puter-image-generation', driver: 'ai-image',
  *     method: 'generate', args: { prompt, model } }
+ * ("ai-chat" is the CHAT interface's driver — pairing it with the image
+ * interface makes Puter answer "Driver not found: puter-image-generation:
+ * ai-chat", confirmed live 2026-11-28. The workbook model
+ * black-forest-labs/flux-schnell is Puter's Replicate-route default model
+ * per Puter's own txt2img docs.)
  * The workbook Base URL ("https://puter.com SDK managed") is informational
  * only; the endpoint is fixed by Puter's platform.
  */
@@ -53,7 +58,7 @@ class PuterAdapter extends BaseAdapter {
     }
     const body = {
       interface: 'puter-image-generation',
-      driver: 'ai-chat',
+      driver: 'ai-image',
       test_mode: false,
       method: 'generate',
       args: { prompt, model: model.vendorModelId },

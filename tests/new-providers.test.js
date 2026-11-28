@@ -86,6 +86,7 @@ describe('puter adapter', () => {
     expect(seenUrl).toBe('https://api.puter.com/drivers/call');
     expect(seenAuth).toBe('Bearer token123');
     expect(seenBody.interface).toBe('puter-image-generation');
+    expect(seenBody.driver).toBe('ai-image');
     expect(seenBody.method).toBe('generate');
     expect(seenBody.args).toEqual({ prompt: 'a cat', model: 'black-forest-labs/flux-schnell' });
     expect(out[0].buffer.equals(PNG_1PX)).toBe(true);
@@ -103,6 +104,11 @@ describe('error mapping', () => {
   it('a 400 "model not found" (Eden AI style) maps to MODEL_NOT_FOUND', () => {
     const err = mapHttpError(400, JSON.stringify({ error: { message: 'Model(s) not found or inactive: ovhcloud/stable-diffusion-xl-base-v10' } }));
     expect(err.code).toBe('MODEL_NOT_FOUND');
+  });
+  it('a 404 "Driver not found" (Puter dispatch) is NOT misreported as a missing model', () => {
+    const err = mapHttpError(404, JSON.stringify({ message: 'Driver not found: puter-image-generation:ai-chat' }));
+    expect(err.code).toBe('PROVIDER_ERROR');
+    expect(err.message).toContain('Driver not found');
   });
 });
 

@@ -30,6 +30,9 @@ function mapHttpError(status, bodyText) {
     return new AdapterError('Free limit ended for this model — the provider account is out of free quota/credits, so it cannot generate images right now. Switch to another model or provider, or wait for the free quota to reset.', { code: 'QUOTA_EXHAUSTED', status, diagnostic: diag });
   }
   if (status === 429) return new AdapterError('Rate limit hit on this free-tier API — too many requests in a short time. Wait about a minute and try again; if it keeps happening, the free daily limit may be over.', { code: 'RATE_LIMITED', status, diagnostic: diag });
+  // A "driver not found" (Puter-style dispatch error) is a routing problem on
+  // our side, NOT a missing model — surface the provider's own words.
+  if (/driver not found/i.test(detail)) return new AdapterError(`The provider rejected the call: ${detail}`, { code: 'PROVIDER_ERROR', status, diagnostic: diag });
   if (status === 404) return new AdapterError('Model not found at this provider. The vendor model ID may have changed — re-import the workbook.', { code: 'MODEL_NOT_FOUND', status, diagnostic: diag });
   if (status === 400 && /not found|inactive|does not exist|unknown model/i.test(detail)) return new AdapterError('Model not found at this provider. The vendor model ID may have changed or the model was retired — check the model list in Settings, or re-import the workbook.', { code: 'MODEL_NOT_FOUND', status, diagnostic: diag });
   if (status === 400) return new AdapterError(`The provider rejected the request: ${detail || 'invalid parameters'}`, { code: 'INVALID_REQUEST', status, diagnostic: diag });
