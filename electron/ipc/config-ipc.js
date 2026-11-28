@@ -113,6 +113,37 @@ function registerConfigIpc(ctx) {
       const m = p && (p.models || []).find((x) => x.id === mid); if (m) m.enabled = enabled;
     }));
   });
+  ipcMain.handle('models:add', (_e, payload) => {
+    obj(payload);
+    const pid = id(payload.providerId, 'providerId');
+    const name = str(payload.name || '', { max: 200, name: 'name' });
+    const vendorModelId = str(payload.vendorModelId, { max: 300, name: 'vendorModelId' });
+    const description = payload.description ? str(payload.description, { max: 1000, name: 'description' }) : '';
+    return ConfigManager.publicConfig(configManager.addModel(pid, { name, vendorModelId, description }));
+  });
+  ipcMain.handle('models:delete', (_e, payload) => {
+    obj(payload);
+    const pid = id(payload.providerId, 'providerId'); const mid = id(payload.modelId, 'modelId');
+    return ConfigManager.publicConfig(configManager.deleteModel(pid, mid));
+  });
+  ipcMain.handle('vision:describe', async (_e, payload) => {
+    obj(payload);
+    const imageDataUrl = str(payload.imageDataUrl, { max: 14000000, name: 'imageDataUrl' });
+    if (!/^data:image\/(png|jpe?g|webp);base64,/i.test(imageDataUrl)) throw new Error('The reference image must be a PNG, JPG or WebP image.');
+    const userPrompt = payload.prompt ? str(payload.prompt, { max: 4000, name: 'prompt' }) : '';
+    const mode = payload.mode === 'edit' ? 'edit' : 'describe';
+    const { describeReference } = require('../services/vision-service');
+    try {
+      const out = await describeReference({
+        config: configManager.load(),
+        getKey: (pid) => credentialManager.getKey(pid),
+        imageDataUrl, userPrompt, mode,
+      });
+      return { ok: true, ...out };
+    } catch (e) {
+      return { ok: false, error: e.message, code: e.code || 'VISION_FAILED', diagnostic: e.diagnostic || '' };
+    }
+  });
   ipcMain.handle('providers:setApiKey', (_e, payload) => {
     obj(payload);
     const pid = id(payload.providerId, 'providerId');

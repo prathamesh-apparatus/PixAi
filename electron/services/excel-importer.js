@@ -18,6 +18,7 @@
  *  - Missing optional columns are fine; missing values are never invented.
  */
 const XLSX = require('xlsx');
+const { resolveAdapter } = require('../adapters/registry');
 
 const HEADER_ALIASES = {
   providerAccount: ['provideraccount', 'provider', 'account', 'providername', 'provideraccountname'],
@@ -153,8 +154,10 @@ function parseWorkbook(buffer, sourceFileName = 'workbook.xlsx') {
   const { rows, headerRowIndex, map, sheetName } = found;
   const warnings = [];
   const providersById = new Map();
+  const chatProvidersById = new Map(); // non-image (chat/vision) providers — kept for the reference-image prompt converter
   const credentials = {}; // providerId -> apiKey (main-process only, never sent to renderer)
   const seenModelKeys = new Set();
+  const seenChatModelKeys = new Set();
   let lastProviderFields = null;
   let totalModelRows = 0;
   let nonImageModels = 0;
@@ -199,7 +202,40 @@ function parseWorkbook(buffer, sourceFileName = 'workbook.xlsx') {
     }
 
     const kind = classifyModelType(modelType);
-    if (kind === 'non-image') { nonImageModels++; continue; }
+    if (kind === 'non-image') {
+      // Not an image model — but chat/vision models (e.g. Google Gemini) are
+      // stored as utility providers so the app can turn a user's reference
+      // image into a generation prompt. Their credentials are stored too.
+      nonImageModels++;
+      const cpId = slugify(providerFields.providerAccount);
+      if (providerFields.apiKey) credentials[cpId] = providerFields.apiKey;
+      if (!chatProvidersById.has(cpId)) {
+        chatProvidersById.set(cpId, {
+          id: cpId,
+          name: providerFields.providerAccount,
+          adapterRaw: providerFields.adapter || '',
+          baseUrl: providerFields.baseUrl || '',
+          status: isActiveStatus(providerFields.providerStatus) ? 'active' : 'inactive',
+          models: [],
+        });
+      }
+      const cp = chatProvidersById.get(cpId);
+      if (!cp.baseUrl && providerFields.baseUrl) cp.baseUrl = providerFields.baseUrl;
+      const chatKey = `${cpId}::${(vendorModelId || modelName).toLowerCase()}`;
+      if (!seenChatModelKeys.has(chatKey)) {
+        seenChatModelKeys.add(chatKey);
+        cp.models.push({
+          id: chatKey,
+          providerId: cpId,
+          name: modelName || vendorModelId,
+          vendorModelId: vendorModelId || '',
+          description: get(row, 'description'),
+          modelType: modelType || '',
+          status: isActiveStatus(get(row, 'modelStatus')) ? 'active' : 'inactive',
+        });
+      }
+      continue;
+    }
     if (kind === 'unknown') {
       warnings.push(`Row ${r + 1}: model "${modelName || vendorModelId}" has an unrecognized Model Type "${modelType || '(blank)'}" — not imported as an image model. Please review.`);
       continue;
@@ -258,19 +294,26 @@ function parseWorkbook(buffer, sourceFileName = 'workbook.xlsx') {
 
   const providers = [...providersById.values()];
   for (const p of providers) {
+    const resolution = resolveAdapter(p);
+    p.adapter = resolution.adapterId;
+    p.adapterSupported = resolution.supported;
     if (!p.baseUrl) warnings.push(`Provider "${p.name}" has no Base URL in the workbook.`);
     if (!p.hasApiKey) warnings.push(`Provider "${p.name}" has no API key in the workbook.`);
   }
+  const chatProviders = [...chatProvidersById.values()].filter((p) => p.models.length > 0);
   return {
     sourceFile: sourceFileName,
     sheetName,
     providers,
+    chatProviders,
     credentials,
     warnings,
     stats: {
       providerCount: providers.length,
       imageModelCount: providers.reduce((n, p) => n + p.models.length, 0),
       nonImageModelCount: nonImageModels,
+      chatProviderCount: chatProviders.length,
+      chatModelCount: chatProviders.reduce((n, p) => n + p.models.length, 0),
       totalModelRows,
     },
   };

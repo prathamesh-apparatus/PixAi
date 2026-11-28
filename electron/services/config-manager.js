@@ -103,9 +103,49 @@ class ConfigManager {
         models,
       };
     });
-    const cfg = { version: 1, updatedAt: new Date().toISOString(), sourceFile: parsed.sourceFile, providers };
+    const cfg = {
+      version: 1, updatedAt: new Date().toISOString(), sourceFile: parsed.sourceFile, providers,
+      // Chat/vision providers (Gemini & friends) ride along in the same file —
+      // they power the reference-image → prompt conversion, never image gen.
+      chatProviders: parsed.chatProviders !== undefined ? parsed.chatProviders : (current.chatProviders || []),
+    };
     this._writeAtomic(cfg);
     return { config: cfg, ...result };
+  }
+  /** Add one image model to a provider from inside the app (Settings). */
+  addModel(providerId, { name, vendorModelId, description = '' } = {}) {
+    const vendor = String(vendorModelId || '').trim();
+    if (!vendor) throw new Error('Enter the vendor model ID (exactly as the provider names it).');
+    return this.update((cfg) => {
+      const p = cfg.providers.find((x) => x.id === providerId);
+      if (!p) throw new Error('Provider not found in the configuration.');
+      const modelId = `${providerId}::${vendor.toLowerCase()}`;
+      if ((p.models || []).some((m) => m.id === modelId)) throw new Error('That model already exists under this provider.');
+      const resolution = resolveAdapter(p);
+      p.models = p.models || [];
+      p.models.push({
+        id: modelId, providerId,
+        name: String(name || '').trim() || vendor,
+        vendorModelId: vendor,
+        description: String(description || '').trim(),
+        modelType: 'Text to Image generation',
+        status: 'active', statusRaw: 'live', enabled: true,
+        testState: 'not-tested', lastTestedAt: null,
+        adapter: resolution.adapterId, adapterSupported: resolution.supported,
+        addedManually: true,
+      });
+    });
+  }
+  /** Remove one model from a provider (Settings). History records keep their
+   *  own copy of the model name, so past generations are unaffected. */
+  deleteModel(providerId, modelId) {
+    return this.update((cfg) => {
+      const p = cfg.providers.find((x) => x.id === providerId);
+      if (!p) throw new Error('Provider not found in the configuration.');
+      const before = (p.models || []).length;
+      p.models = (p.models || []).filter((m) => m.id !== modelId);
+      if (p.models.length === before) throw new Error('Model not found under this provider.');
+    });
   }
   /** Persist small mutations (enable/disable, test state) made outside imports. */
   update(mutator) {

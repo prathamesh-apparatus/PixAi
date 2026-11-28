@@ -1,105 +1,180 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Wand2, Square } from 'lucide-react';
+import { Wand2, Square, Pencil, ChevronsUp, Sparkles, Shuffle, Image as ImageIcon, Clapperboard, Camera, Sun, Shirt, Paperclip, X } from 'lucide-react';
 import PromptEditor from '../components/PromptEditor';
-import GenerationSettings from '../components/GenerationSettings';
 import ImagePreview from '../components/ImagePreview';
 import { api } from '../services/api';
 import { useToast } from '../components/Toasts';
+import { rankCandidates, candidatesWithPreferred } from '../utils/modelRank';
+import { MODES, getMode, applyMode, ASPECTS, sizeForAspect } from '../utils/modes';
+
+const MODE_ICONS = {
+  generate: Wand2, edit: Pencil, upscale: ChevronsUp, skin: Sparkles,
+  variation: Shuffle, background: ImageIcon, cinematic: Clapperboard,
+  angle: Camera, relight: Sun, mockup: Shirt,
+};
 
 /**
- * Create layout (DigiArts-style, per Ray's reference): the generated image is
- * the hero in one big centre stage card, the prompt + provider/model/settings
- * live in one composer bar directly under the stage, and recent generations
- * run down the right rail. No left control column, no bulky panels.
+ * Create layout (DigiArts stage + Magnific-style composer): the generated
+ * image is the hero stage, recent generations run down the right rail, and
+ * the composer carries mode tabs, the prompt, a reference-image attach, size
+ * and count. There are NO provider/model selectors — the auto engine tries
+ * the cheapest working model first and switches on any failure.
  */
 export default function CreateImage({ config, settings, onConfigRefresh, prefill, onPrefillUsed }) {
   const toast = useToast();
   const providers = config.providers || [];
-  const [providerId, setProviderId] = useState(settings.defaultProviderId || '');
-  const [modelId, setModelId] = useState(settings.defaultModelId || '');
   const [prompt, setPrompt] = useState('');
-  const [negativePrompt, setNegativePrompt] = useState('');
-  const [caps, setCaps] = useState({ capabilities: [], supportsNegativePrompt: false, supported: false });
-  const [settingValues, setSettingValues] = useState({});
+  const [mode, setMode] = useState('generate');
+  const [modeOption, setModeOption] = useState('');
+  const [backgroundText, setBackgroundText] = useState('');
+  const [refImage, setRefImage] = useState(null); // { dataUrl, name }
+  const [aspect, setAspect] = useState('Auto');
+  const [count, setCount] = useState(1);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [result, setResult] = useState(null);
   const [stageRecord, setStageRecord] = useState(null);
   const [recent, setRecent] = useState([]);
+  const [lastUsed, setLastUsed] = useState('');
   const requestRef = useRef(null);
+  const cancelRef = useRef(false);
+  const fileRef = useRef(null);
 
-  const provider = providers.find((p) => p.id === providerId) || null;
-  const activeProviders = providers.filter((p) => p.enabled !== false && p.status === 'active');
-  const models = provider ? (provider.models || []).filter((m) => m.enabled !== false && m.status === 'active') : [];
-  const model = models.find((m) => m.id === modelId) || null;
+  const modeDef = getMode(mode);
 
   useEffect(() => { api.historyList({}).then(setRecent).catch(() => {}); }, [result]);
   useEffect(() => {
     if (prefill) {
-      // Arriving via Regenerate (from History/Favorites): fill the composer
-      // AND immediately generate — one click must visibly do the work.
       onPrefillUsed && onPrefillUsed();
       regenerateRecord(prefill);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
-  // No silent "first available" auto-selection: the user explicitly picks a
-  // provider and a model (or sets defaults in Settings). Only clear a stale
-  // model selection when the provider changes underneath it.
   useEffect(() => {
-    if (modelId && !models.find((m) => m.id === modelId)) setModelId('');
-    if (!provider) setModelId('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider, modelId]);
-  useEffect(() => {
-    if (providerId && modelId) {
-      api.modelCapabilities(providerId, modelId).then((c) => {
-        setCaps(c);
-        const defaults = {};
-        (c.capabilities || []).forEach((cap) => { defaults[cap.key] = cap.default; });
-        if (settings.defaultAspectRatio && defaults.aspectRatio !== undefined) defaults.aspectRatio = settings.defaultAspectRatio;
-        setSettingValues(defaults);
-      }).catch(() => setCaps({ capabilities: [], supportsNegativePrompt: false, supported: false }));
-    } else setCaps({ capabilities: [], supportsNegativePrompt: false, supported: false });
-  }, [providerId, modelId]);
+    const m = getMode(mode);
+    setModeOption(m.options && m.options.length ? m.options[0].id : '');
+  }, [mode]);
 
-  async function generate(override = null) {
-    const pId = override ? override.providerId : providerId;
-    const mId = override ? override.modelId : modelId;
-    const pr = override ? override.prompt : prompt;
-    const np = override ? override.negativePrompt : negativePrompt;
-    const sv = override ? override.settings : settingValues;
-    const prov = providers.find((p) => p.id === pId) || null;
-    const mdl = prov ? (prov.models || []).find((m) => m.id === mId) || null : null;
-    if (!prov || !mdl) { toast('Select a provider and a model first.', 'warn'); return; }
-    if (prov.adapterSupported === false) { toast('This provider\u2019s adapter is not implemented yet.', 'error'); return; }
-    if (!pr.trim()) { toast('Write a prompt first.', 'warn'); return; }
-    const requestId = `req-${Date.now()}`;
-    requestRef.current = requestId;
-    setBusy(true); setStatus(`Generating with ${prov.name} · ${mdl.name}…`);
-    const res = await api.generate({ requestId, providerId: pId, modelId: mId, prompt: pr, negativePrompt: np, settings: sv || {} });
-    setBusy(false); setStatus('');
-    if (res.ok) {
-      setResult(res.images[0]);
-      setStageRecord(res.images[0]);
-      toast(`Image generated with ${res.modelName}.`, 'success');
-      onConfigRefresh && onConfigRefresh();
-    } else {
-      toast(res.error || 'Generation failed.', 'error');
-      if (res.diagnostic) setStatus(`Diagnostic: ${res.diagnostic}`);
-      onConfigRefresh && onConfigRefresh();
+  function pickRefImage(e) {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    if (!/^image\//.test(f.type)) { toast('Please choose an image file.', 'warn'); return; }
+    if (f.size > 8 * 1024 * 1024) { toast('Reference image is too large — please use one under 8 MB.', 'warn'); return; }
+    const reader = new FileReader();
+    reader.onload = () => setRefImage({ dataUrl: String(reader.result), name: f.name });
+    reader.onerror = () => toast('Could not read that image file.', 'error');
+    reader.readAsDataURL(f);
+  }
+
+  /** Try candidates in auto order until one generates. Returns a result
+   *  object, { cancelled: true }, or { failures: [...] } when all failed. */
+  async function runAuto(finalPrompt, genSettings, preferred) {
+    const candidates = preferred
+      ? candidatesWithPreferred(providers, preferred.providerId, preferred.modelId)
+      : rankCandidates(providers);
+    if (!candidates.length) {
+      toast('No model is configured yet — import the workbook (Settings → Upload Excel, or the import command) first.', 'warn');
+      return null;
+    }
+    const failures = [];
+    for (let i = 0; i < candidates.length; i++) {
+      if (cancelRef.current) return { cancelled: true };
+      const c = candidates[i];
+      setStatus(candidates.length > 1 ? `Trying ${c.modelName} — attempt ${i + 1} of ${candidates.length}…` : `Generating with ${c.modelName}…`);
+      const requestId = `req-${Date.now()}-${i}`;
+      requestRef.current = requestId;
+      const res = await api.generate({ requestId, providerId: c.providerId, modelId: c.modelId, prompt: finalPrompt, negativePrompt: '', settings: genSettings });
+      if (res.ok && res.images && res.images.length) return { res, candidate: c, attempts: i + 1, failures };
+      if (res.code === 'CANCELLED') return { cancelled: true };
+      failures.push({ candidate: c, error: res.error || 'Generation failed.', diagnostic: res.diagnostic || '' });
+    }
+    return { failures };
+  }
+
+  function reportSuccess(out, madeCount) {
+    const c = out.candidate;
+    setLastUsed(`${c.providerName} · ${c.modelName}`);
+    let msg = `Generated with ${c.modelName}.`;
+    if (out.attempts > 1) msg = `${c.modelName} generated it — auto-switched after ${out.failures.length} model(s) failed.`;
+    if (madeCount > 1) msg += ` (${madeCount} images)`;
+    toast(msg, 'success');
+  }
+
+  function reportAllFailed(failures) {
+    if (!failures || !failures.length) return;
+    toast(`No model could generate this — tried ${failures.length} model(s). ${failures[0].error}`, 'error');
+    const last = failures[failures.length - 1];
+    if (last.diagnostic) setStatus(`Diagnostic: ${last.diagnostic}`);
+  }
+
+  async function generate() {
+    if (busy) return;
+    if (!prompt.trim() && !refImage) { toast('Write a prompt first.', 'warn'); return; }
+    if (mode === 'edit' && !refImage) { toast('Edit mode needs a reference image — attach one with the clip button.', 'warn'); return; }
+    setBusy(true); cancelRef.current = false; setStatus('');
+    try {
+      let basePrompt = prompt;
+      if (refImage) {
+        setStatus('Reading your reference image…');
+        const v = await api.describeReference({ imageDataUrl: refImage.dataUrl, prompt, mode: mode === 'edit' ? 'edit' : 'describe' });
+        if (!v.ok) { toast(v.error || 'Could not read the reference image.', 'error'); if (v.diagnostic) setStatus(`Diagnostic: ${v.diagnostic}`); return; }
+        basePrompt = v.prompt;
+        toast(`Prompt built from your reference image by ${v.visionModelName}.`, 'info');
+      }
+      const { prompt: finalPrompt } = applyMode(mode, basePrompt, { optionId: modeOption, backgroundText });
+      const genSettings = {};
+      if (aspect !== 'Auto') { genSettings.aspectRatio = aspect; genSettings.size = sizeForAspect(aspect); }
+      const made = [];
+      let firstOut = null;
+      for (let n = 0; n < count; n++) {
+        const out = await runAuto(finalPrompt, genSettings, null);
+        if (!out) break;
+        if (out.cancelled) break;
+        if (out.failures) { if (n === 0) reportAllFailed(out.failures); break; }
+        if (!firstOut) firstOut = out;
+        made.push(...out.res.images);
+      }
+      if (made.length) {
+        setResult(made[0]);
+        setStageRecord(made[0]);
+        if (firstOut) reportSuccess(firstOut, made.length);
+        onConfigRefresh && onConfigRefresh();
+      }
+    } finally {
+      setBusy(false);
+      setStatus((s) => (s.startsWith('Diagnostic:') ? s : ''));
     }
   }
 
-  /** Regenerate = run it again, right now, with the record's own provider,
-   *  model, prompt and the settings that produced it. */
-  function regenerateRecord(r) {
+  /** Regenerate = run it again right now, with the record's own model first
+   *  and the auto order as fallback. */
+  async function regenerateRecord(r) {
     if (busy || !r) return;
-    setProviderId(r.provider_id); setModelId(r.model_id);
-    setPrompt(r.prompt); setNegativePrompt(r.negative_prompt || '');
+    setPrompt(r.prompt);
     let s = {};
     try { s = typeof r.settings === 'string' ? JSON.parse(r.settings || '{}') : (r.settings || {}); } catch { s = {}; }
-    generate({ providerId: r.provider_id, modelId: r.model_id, prompt: r.prompt, negativePrompt: r.negative_prompt || '', settings: s });
+    setBusy(true); cancelRef.current = false; setStatus('');
+    try {
+      const out = await runAuto(r.prompt, s, { providerId: r.provider_id, modelId: r.model_id });
+      if (out && out.res) {
+        setResult(out.res.images[0]);
+        setStageRecord(out.res.images[0]);
+        reportSuccess(out, out.res.images.length);
+        onConfigRefresh && onConfigRefresh();
+      } else if (out && out.failures) {
+        reportAllFailed(out.failures);
+        onConfigRefresh && onConfigRefresh();
+      }
+    } finally {
+      setBusy(false);
+      setStatus((st) => (st.startsWith('Diagnostic:') ? st : ''));
+    }
+  }
+
+  function cancel() {
+    cancelRef.current = true;
+    if (requestRef.current) api.cancelGenerate(requestRef.current);
   }
 
   function clearStage() { setStageRecord(null); setResult(null); }
@@ -111,65 +186,96 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
         <ImagePreview record={stage} busy={busy} statusText={status} onRegenerate={regenerateRecord} onClear={clearStage} />
 
         <div className="card p-4 space-y-3">
-          {model && (
-            <div className="flex items-center gap-2 min-w-0 anim-fade">
-              <span className="badge-info shrink-0">{provider.adapter || provider.adapterRaw || 'no adapter'}</span>
-              {model.vendorModelId && <span className="badge-mute shrink-0">{model.vendorModelId}</span>}
-              {model.description && <span className="text-xs text-mute truncate">{model.description}</span>}
+          {/* Mode tabs — Magnific-style, horizontally scrollable. */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+            {MODES.map((m) => {
+              const Icon = MODE_ICONS[m.id] || Wand2;
+              const active = mode === m.id;
+              return (
+                <button key={m.id} onClick={() => setMode(m.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${active ? 'bg-white text-black shadow' : 'bg-white/5 text-slate-300 hover:bg-white/10 ring-1 ring-white/10'}`}>
+                  <Icon size={13} /> {m.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {modeDef.options && (
+            <div className="flex flex-wrap gap-1.5 anim-fade">
+              {modeDef.options.map((o) => (
+                <button key={o.id} onClick={() => setModeOption(o.id)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${modeOption === o.id ? 'bg-cy/20 text-cy ring-1 ring-cy/50' : 'bg-white/5 text-mute hover:text-slate-200 ring-1 ring-white/10'}`}>
+                  {o.label}
+                </button>
+              ))}
             </div>
           )}
-          {provider && provider.adapterSupported === false && (
-            <p className="text-xs text-amber-300">This provider's adapter is not implemented yet — its configuration is imported, but generation needs a new adapter module.</p>
+          {modeDef.usesBackgroundText && (
+            <input className="input anim-fade" placeholder="Describe the background — e.g. sunset beach with palm trees…"
+              value={backgroundText} onChange={(e) => setBackgroundText(e.target.value)} maxLength={500} />
           )}
-          {model && model.testState === 'quota-exhausted' && (
-            <p className="text-xs text-amber-300">Free limit ended for this model — it can't generate until the provider's free quota resets. Pick another model.</p>
-          )}
+          {modeDef.hint && <p className="text-[11px] text-mute anim-fade">{modeDef.hint}</p>}
 
-          <PromptEditor value={prompt} onChange={setPrompt} history={recent} compact />
-          {caps.supportsNegativePrompt && (
-            <div>
-              <label className="label">Negative prompt</label>
-              <textarea className="input min-h-[44px] resize-y" placeholder="What to avoid in the image…"
-                value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} maxLength={2000} />
+          <div className="flex items-start gap-2">
+            <div className="flex-1 min-w-0">
+              <PromptEditor value={prompt} onChange={setPrompt} history={recent} compact />
+            </div>
+            <button className="btn-ghost !px-3 !py-2.5 shrink-0" title="Attach a reference image — the app turns it into a proper prompt" onClick={() => fileRef.current && fileRef.current.click()}>
+              <Paperclip size={15} />
+            </button>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickRefImage} />
+          </div>
+
+          {refImage && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-navy border border-line px-3 py-2 anim-fade">
+              <img src={refImage.dataUrl} alt="Reference" className="w-10 h-10 rounded-lg object-cover ring-1 ring-white/15" />
+              <div className="min-w-0 flex-1">
+                <span className="text-xs font-semibold block truncate">Reference image attached</span>
+                <span className="text-[11px] text-mute block truncate">{refImage.name} — a vision model will turn it + your prompt into the generation prompt.</span>
+              </div>
+              <button className="btn-ghost !p-1.5" title="Remove reference image" onClick={() => setRefImage(null)}><X size={14} /></button>
             </div>
           )}
 
           <div className="flex flex-wrap items-end gap-2.5">
-            <div className="w-[210px]">
-              <label className="label">Provider</label>
-              <select className="input" value={providerId} onChange={(e) => { setProviderId(e.target.value); setModelId(''); }}>
-                <option value="">Select a provider…</option>
-                {activeProviders.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}{p.adapterSupported === false ? ' (unsupported adapter)' : ''}</option>
+            <div className="w-[196px]">
+              <label className="label">Size</label>
+              <select className="input" value={aspect} onChange={(e) => setAspect(e.target.value)}>
+                {ASPECTS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Images</label>
+              <div className="flex rounded-xl overflow-hidden ring-1 ring-white/10">
+                {[1, 2, 4].map((n) => (
+                  <button key={n} onClick={() => setCount(n)}
+                    className={`px-3 py-2.5 text-xs font-bold transition-all ${count === n ? 'bg-white text-black' : 'bg-white/5 text-mute hover:text-slate-200'}`}>
+                    ×{n}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
-            <div className="flex-1 min-w-[210px]">
+            <div className="min-w-0">
               <label className="label">Model</label>
-              <select className="input" value={modelId} onChange={(e) => setModelId(e.target.value)} disabled={!provider}>
-                <option value="">{provider ? 'Select a model…' : 'Select a provider first'}</option>
-                {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
+              <p className="text-xs text-mute py-2.5 truncate" title={lastUsed || 'Auto'}>
+                <span className="badge-info mr-2">Auto</span>
+                {lastUsed ? `Last: ${lastUsed}` : 'Cheapest working model first — switches automatically if one fails.'}
+              </p>
             </div>
-            <GenerationSettings inline capabilities={caps.capabilities} values={settingValues}
-              onChange={(k, v) => setSettingValues((s) => ({ ...s, [k]: v }))} />
-            <button className="btn-primary !px-6 !py-3 ml-auto" onClick={() => generate()} disabled={busy}>
+            <button className="btn-primary !px-6 !py-3 ml-auto" onClick={generate} disabled={busy}>
               <Wand2 size={16} /> {busy ? 'Generating…' : 'Generate Image'}
             </button>
             {busy && (
-              <button className="btn-ghost !py-3" onClick={() => requestRef.current && api.cancelGenerate(requestRef.current)}>
+              <button className="btn-ghost !py-3" onClick={cancel}>
                 <Square size={14} /> Cancel
               </button>
             )}
           </div>
-          {provider && models.length === 0 && (
-            <p className="text-xs text-amber-300">This provider has no active image models in the imported workbook.</p>
-          )}
           {busy && <div className="skeleton h-1.5 rounded-full" />}
           {status && <p className={`text-xs ${busy ? 'text-mute generating-pulse' : 'text-rose-300'}`}>{status}</p>}
           {providers.length === 0 && (
             <div className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200" style={{ borderRadius: 16 }}>
-              No providers imported yet. Save your workbook as <b>FabrixAPI1.xlsx</b> in the project folder and run
+              No providers imported yet. Upload your workbook in <b>Settings → Providers &amp; models</b>, or run
               <span className="block font-mono text-xs mt-1.5 text-amber-100">npm run import -- .\FabrixAPI1.xlsx</span>
               then restart the app to start generating.
             </div>
@@ -185,7 +291,6 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
         {recent.length === 0 && <p className="text-xs text-mute leading-relaxed">Nothing generated yet. Your latest images will show up here as a film reel, saved on this computer.</p>}
         {recent.length > 0 && (
           <div className="relative">
-            {/* Film-reel sprocket holes down both edges of the strip. */}
             <div className="absolute left-0 top-0 bottom-0 w-[13px]" style={{ backgroundColor: '#08080a', backgroundImage: 'radial-gradient(circle at 50% 50%, #35373f 2.3px, transparent 3.1px)', backgroundSize: '13px 19px', backgroundRepeat: 'repeat-y', borderRadius: '8px 0 0 8px' }} />
             <div className="absolute right-0 top-0 bottom-0 w-[13px]" style={{ backgroundColor: '#08080a', backgroundImage: 'radial-gradient(circle at 50% 50%, #35373f 2.3px, transparent 3.1px)', backgroundSize: '13px 19px', backgroundRepeat: 'repeat-y', borderRadius: '0 8px 8px 0' }} />
             <div className="mx-[13px] px-2 py-2 space-y-3 max-h-[548px] overflow-y-auto scroll-smooth"

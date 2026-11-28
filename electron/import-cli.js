@@ -55,6 +55,7 @@ app.whenReady().then(() => {
     console.log(`  API credentials updated:    ${s.credentialsUpdated}`);
     console.log(`  Unsupported providers:      ${s.unsupportedProviders}`);
     console.log(`  Non-image models excluded:  ${s.nonImageModelsExcluded}`);
+    if (parsed.stats.chatProviderCount) console.log(`  Vision/chat providers kept: ${parsed.stats.chatProviderCount} (${parsed.stats.chatModelCount} models — used for reference-image prompts, e.g. Gemini)`);
     for (const w of diff.warnings) console.log(`  Warning: ${w}`);
     for (const p of diff.unsupportedProviders) console.log(`  Unsupported: ${p.name} (adapter "${p.adapterRaw || 'unknown'}") — imported, but a new adapter module is needed before it can generate.`);
 

@@ -31,6 +31,7 @@ function mapHttpError(status, bodyText) {
   }
   if (status === 429) return new AdapterError('Rate limit hit on this free-tier API — too many requests in a short time. Wait about a minute and try again; if it keeps happening, the free daily limit may be over.', { code: 'RATE_LIMITED', status, diagnostic: diag });
   if (status === 404) return new AdapterError('Model not found at this provider. The vendor model ID may have changed — re-import the workbook.', { code: 'MODEL_NOT_FOUND', status, diagnostic: diag });
+  if (status === 400 && /not found|inactive|does not exist|unknown model/i.test(detail)) return new AdapterError('Model not found at this provider. The vendor model ID may have changed or the model was retired — check the model list in Settings, or re-import the workbook.', { code: 'MODEL_NOT_FOUND', status, diagnostic: diag });
   if (status === 400) return new AdapterError(`The provider rejected the request: ${detail || 'invalid parameters'}`, { code: 'INVALID_REQUEST', status, diagnostic: diag });
   if (status >= 500) return new AdapterError('The provider is unavailable right now (server error). Try again later.', { code: 'PROVIDER_UNAVAILABLE', status, diagnostic: diag });
   return new AdapterError(`Provider request failed (${diag}).`, { code: 'PROVIDER_ERROR', status, diagnostic: diag });

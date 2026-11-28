@@ -27,7 +27,12 @@ class NvidiaAdapter extends BaseAdapter {
     const marker = '/genai/';
     const idx = base.indexOf(marker);
     if (idx >= 0) return `${base.slice(0, idx + marker.length)}${model.vendorModelId}`;
-    return base;
+    // The workbook may carry the account's general API root instead of a
+    // per-model endpoint (the new sheet uses https://integrate.api.nvidia.com/v1,
+    // which is NVIDIA's chat-completions base). The hosted image endpoint each
+    // FLUX model actually requires lives on ai.api.nvidia.com under
+    // /v1/genai/{vendorModelId} — build it from the model id.
+    return `https://ai.api.nvidia.com/v1/genai/${model.vendorModelId}`;
   }
 
   sizeFor(aspect) {
