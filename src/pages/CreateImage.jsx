@@ -17,8 +17,9 @@ const MODE_ICONS = {
  * Create layout (DigiArts stage + Magnific-style composer): the generated
  * image is the hero stage, recent generations run down the right rail, and
  * the composer carries mode tabs, the prompt, a reference-image attach, size
- * and count. There are NO provider/model selectors — the auto engine tries
- * the cheapest working model first and switches on any failure.
+ * and count. Model choice defaults to Auto — the engine tries the cheapest
+ * working model first and switches on any failure. A Manual override brings
+ * back provider/model selectors for testing one exact model (no switching).
  */
 export default function CreateImage({ config, settings, onConfigRefresh, prefill, onPrefillUsed }) {
   const toast = useToast();
@@ -36,11 +37,21 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
   const [stageRecord, setStageRecord] = useState(null);
   const [recent, setRecent] = useState([]);
   const [lastUsed, setLastUsed] = useState('');
+  // Manual override (Ray's testing mode): pick an exact provider + model and
+  // generate with ONLY that model — no auto-switch — so each model's real
+  // result or real error is visible. Auto stays the default.
+  const [selectionMode, setSelectionMode] = useState('auto');
+  const [providerId, setProviderId] = useState('');
+  const [modelId, setModelId] = useState('');
   const requestRef = useRef(null);
   const cancelRef = useRef(false);
   const fileRef = useRef(null);
 
   const modeDef = getMode(mode);
+  const activeProviders = providers.filter((p) => p.enabled !== false && p.status === 'active');
+  const manualProvider = activeProviders.find((p) => p.id === providerId) || null;
+  const manualModels = manualProvider ? (manualProvider.models || []).filter((m) => m.enabled !== false && m.status === 'active') : [];
+  const manualModel = manualModels.find((m) => m.id === modelId) || null;
 
   useEffect(() => { api.historyList({}).then(setRecent).catch(() => {}); }, [result]);
   useEffect(() => {
@@ -54,6 +65,10 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
     const m = getMode(mode);
     setModeOption(m.options && m.options.length ? m.options[0].id : '');
   }, [mode]);
+  useEffect(() => {
+    if (modelId && !manualModels.find((m) => m.id === modelId)) setModelId('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providerId, modelId]);
 
   function pickRefImage(e) {
     const f = e.target.files && e.target.files[0];
@@ -108,10 +123,36 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
     if (last.diagnostic) setStatus(`Diagnostic: ${last.diagnostic}`);
   }
 
+  /** Manual test path: exactly the chosen model, no fallback — its real
+   *  result or real error is what gets reported. */
+  async function runManual(finalPrompt, genSettings) {
+    const made = [];
+    for (let n = 0; n < count; n++) {
+      if (cancelRef.current) break;
+      setStatus(`Generating with ${manualModel.name} (manual test)…`);
+      const requestId = `req-${Date.now()}-m${n}`;
+      requestRef.current = requestId;
+      const res = await api.generate({ requestId, providerId, modelId, prompt: finalPrompt, negativePrompt: '', settings: genSettings });
+      if (res.ok && res.images && res.images.length) { made.push(...res.images); continue; }
+      if (res.code === 'CANCELLED') break;
+      toast(res.error || 'Generation failed.', 'error');
+      if (res.diagnostic) setStatus(`Diagnostic: ${res.diagnostic}`);
+      break;
+    }
+    if (made.length) {
+      setResult(made[0]);
+      setStageRecord(made[0]);
+      setLastUsed(`${manualProvider.name} · ${manualModel.name}`);
+      toast(`Generated with ${manualModel.name} (manual test).`, 'success');
+      onConfigRefresh && onConfigRefresh();
+    }
+  }
+
   async function generate() {
     if (busy) return;
     if (!prompt.trim() && !refImage) { toast('Write a prompt first.', 'warn'); return; }
     if (mode === 'edit' && !refImage) { toast('Edit mode needs a reference image — attach one with the clip button.', 'warn'); return; }
+    if (selectionMode === 'manual' && (!manualProvider || !manualModel)) { toast('In Manual mode, select a provider and a model to test first.', 'warn'); return; }
     setBusy(true); cancelRef.current = false; setStatus('');
     try {
       let basePrompt = prompt;
@@ -125,6 +166,7 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
       const { prompt: finalPrompt } = applyMode(mode, basePrompt, { optionId: modeOption, backgroundText });
       const genSettings = {};
       if (aspect !== 'Auto') { genSettings.aspectRatio = aspect; genSettings.size = sizeForAspect(aspect); }
+      if (selectionMode === 'manual') { await runManual(finalPrompt, genSettings); return; }
       const made = [];
       let firstOut = null;
       for (let n = 0; n < count; n++) {
@@ -237,6 +279,30 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
             </div>
           )}
 
+          {selectionMode === 'manual' && (
+            <div className="anim-fade space-y-1.5">
+              <div className="flex flex-wrap gap-2.5">
+                <div className="w-[210px]">
+                  <label className="label">Provider</label>
+                  <select className="input" value={providerId} onChange={(e) => { setProviderId(e.target.value); setModelId(''); }}>
+                    <option value="">Select a provider…</option>
+                    {activeProviders.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}{p.adapterSupported === false ? ' (unsupported adapter)' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex-1 min-w-[210px]">
+                  <label className="label">Model</label>
+                  <select className="input" value={modelId} onChange={(e) => setModelId(e.target.value)} disabled={!manualProvider}>
+                    <option value="">{manualProvider ? 'Select a model…' : 'Select a provider first'}</option>
+                    {manualModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <p className="text-[11px] text-mute">Manual test — Generate uses exactly this model, no auto-switch, so you see its real result or real error.{manualModel && manualModel.vendorModelId ? ` Vendor ID: ${manualModel.vendorModelId}` : ''}</p>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-end gap-2.5">
             <div className="w-[196px]">
               <label className="label">Size</label>
@@ -255,11 +321,23 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
                 ))}
               </div>
             </div>
+            <div>
+              <label className="label">Model choice</label>
+              <div className="flex rounded-xl overflow-hidden ring-1 ring-white/10">
+                {[['auto', 'Auto'], ['manual', 'Manual']].map(([v, label]) => (
+                  <button key={v} onClick={() => setSelectionMode(v)}
+                    className={`px-3 py-2.5 text-xs font-bold transition-all ${selectionMode === v ? 'bg-white text-black' : 'bg-white/5 text-mute hover:text-slate-200'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="min-w-0">
-              <label className="label">Model</label>
-              <p className="text-xs text-mute py-2.5 truncate" title={lastUsed || 'Auto'}>
-                <span className="badge-info mr-2">Auto</span>
-                {lastUsed ? `Last: ${lastUsed}` : 'Cheapest working model first — switches automatically if one fails.'}
+              <label className="label">{selectionMode === 'manual' ? 'Testing' : 'Auto engine'}</label>
+              <p className="text-xs text-mute py-2.5 truncate" title={lastUsed || ''}>
+                {selectionMode === 'manual'
+                  ? (manualModel ? manualModel.name : 'Pick a provider + model above')
+                  : (lastUsed ? `Last: ${lastUsed}` : 'Cheapest working model first — switches automatically if one fails.')}
               </p>
             </div>
             <button className="btn-primary !px-6 !py-3 ml-auto" onClick={generate} disabled={busy}>
