@@ -119,8 +119,10 @@ export default function CreateImage({ config, settings, onConfigRefresh, prefill
   function reportAllFailed(failures) {
     if (!failures || !failures.length) return;
     toast(`No model could generate this — tried ${failures.length} model(s). ${failures[0].error}`, 'error');
-    const last = failures[failures.length - 1];
-    if (last.diagnostic) setStatus(`Diagnostic: ${last.diagnostic}`);
+    // Show EVERY model's own reason, not just one diagnostic — when several
+    // models fail for different reasons, the user can see all of them.
+    const summary = failures.map((f) => `${f.candidate.modelName}: ${f.diagnostic || f.error}`).join('  ·  ');
+    setStatus(`Diagnostic: ${summary}`);
   }
 
   /** Manual test path: exactly the chosen model, no fallback — its real

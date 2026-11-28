@@ -46,6 +46,11 @@ export function rankCandidates(providers) {
     if (p.adapterSupported === false) continue;
     for (const m of p.models || []) {
       if (m.enabled === false || m.status !== 'active') continue;
+      // A model the provider has already told us does not exist (retired /
+      // wrong vendor ID) can never succeed — Auto skips it entirely instead
+      // of wasting an attempt on it every run. It comes back automatically
+      // when a re-import or a successful Manual test clears the state.
+      if (m.testState === 'model-not-found') continue;
       out.push({
         providerId: p.id, modelId: m.id,
         providerName: p.name, modelName: m.name,

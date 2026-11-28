@@ -239,6 +239,15 @@ describe('auto model ranking', () => {
     expect(ranked[0].modelId).toBe('o::paid');
     expect(ranked[1].modelId).toBe('p::flux');
   });
+  it('skips models the provider already said do not exist (retired models never block Auto)', () => {
+    const withDead = [
+      { id: 'openrouter-main', name: 'openrouter', status: 'active', adapterSupported: true, models: [{ id: 'o::free', name: 'Recraft Free', vendorModelId: 'recraft/recraft-v4.1-flash-v2:free', status: 'active', testState: 'model-not-found' }] },
+      ...providers,
+    ];
+    const ranked = rankCandidates(withDead);
+    expect(ranked.find((c) => c.modelId === 'o::free')).toBeUndefined();
+    expect(ranked.length).toBe(3);
+  });
 });
 
 describe('creation modes (prompt-craft)', () => {
