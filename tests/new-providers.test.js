@@ -7,6 +7,7 @@ const { resolveAdapter } = require('../electron/adapters/registry');
 const { NvidiaAdapter } = require('../electron/adapters/nvidia-adapter');
 const { PollinationsAdapter, modelParam } = require('../electron/adapters/pollinations-adapter');
 const { PuterAdapter } = require('../electron/adapters/puter-adapter');
+const { EdenAiAdapter } = require('../electron/adapters/edenai-adapter');
 const { mapHttpError } = require('../electron/adapters/base-adapter');
 const { parseWorkbook } = require('../electron/services/excel-importer');
 const { ConfigManager } = require('../electron/services/config-manager');
@@ -27,8 +28,8 @@ function res({ ok = true, status = 200, ctype = 'image/png', body, jsonBody, tex
 }
 
 describe('new provider resolution (EdenAI / Pollinations / Puter)', () => {
-  it('routes by host: edenai -> openai-compatible, pollinations, puter', () => {
-    expect(resolveAdapter({ adapterRaw: 'OpenAI', baseUrl: 'https://api.edenai.run/v3' }).adapterId).toBe('openai-compatible');
+  it('routes by host: edenai -> edenai (universal-ai), pollinations, puter', () => {
+    expect(resolveAdapter({ adapterRaw: 'OpenAI', baseUrl: 'https://api.edenai.run/v3' }).adapterId).toBe('edenai');
     expect(resolveAdapter({ adapterRaw: 'Pollinations AI', baseUrl: 'https://gen.pollinations.ai' }).adapterId).toBe('pollinations');
     expect(resolveAdapter({ adapterRaw: 'Puter.js SDK', baseUrl: 'https://puter.com SDK managed' }).adapterId).toBe('puter');
   });
@@ -75,19 +76,22 @@ describe('pollinations adapter', () => {
 describe('puter adapter', () => {
   const provider = { baseUrl: 'https://puter.com SDK managed' };
   const model = { vendorModelId: 'black-forest-labs/flux-schnell' };
-  it('calls drivers/call with the image-generation driver envelope and decodes a data URI result', async () => {
-    let seenUrl = ''; let seenBody = null; let seenAuth = '';
+  it('sends the exact puter.js SDK envelope: auth_token in the body, SDK content type, data URI result', async () => {
+    let seenUrl = ''; let seenBody = null; let seenHeaders = null;
     const dataUri = `data:image/png;base64,${PNG_1PX.toString('base64')}`;
     const fetchImpl = fakeFetch(async (url, opts) => {
-      seenUrl = url; seenAuth = opts.headers.Authorization; seenBody = JSON.parse(opts.body);
+      seenUrl = url; seenHeaders = opts.headers; seenBody = JSON.parse(opts.body);
       return res({ ctype: 'application/json', jsonBody: { success: true, result: dataUri } });
     });
     const out = await new PuterAdapter().generate({ provider, model, apiKey: 'token123', prompt: 'a cat', settings: {}, fetchImpl });
     expect(seenUrl).toBe('https://api.puter.com/drivers/call');
-    expect(seenAuth).toBe('Bearer token123');
+    expect(seenHeaders['Content-Type']).toBe('text/plain;actually=json');
+    expect(seenHeaders.Authorization).toBeUndefined();
     expect(seenBody.interface).toBe('puter-image-generation');
     expect(seenBody.driver).toBe('ai-image');
     expect(seenBody.method).toBe('generate');
+    expect(seenBody.test_mode).toBe(false);
+    expect(seenBody.auth_token).toBe('token123');
     expect(seenBody.args).toEqual({ prompt: 'a cat', model: 'black-forest-labs/flux-schnell' });
     expect(out[0].buffer.equals(PNG_1PX)).toBe(true);
   });
@@ -97,6 +101,40 @@ describe('puter adapter', () => {
   });
   it('without a token it fails with AUTH_FAILED and a clear message', async () => {
     await expect(new PuterAdapter().generate({ provider, model, apiKey: '', prompt: 'x', settings: {}, fetchImpl: fakeFetch(async () => res({})) })).rejects.toMatchObject({ code: 'AUTH_FAILED' });
+  });
+});
+
+describe('eden ai adapter (universal-ai)', () => {
+  const provider = { baseUrl: 'https://api.edenai.run/v3' };
+  const model = { vendorModelId: 'image/generation/ovhcloud/stable-diffusion-xl-base-v10' };
+  it('posts the workbook model string to /v3/universal-ai and extracts image_resource_url from anywhere in the JSON', async () => {
+    let seenUrl = ''; let seenBody = null;
+    const fetchImpl = fakeFetch(async (url, opts) => {
+      seenUrl = url; seenBody = JSON.parse(opts.body);
+      return res({ ctype: 'application/json', jsonBody: { status: 'success', results: { ovhcloud: { status: 'success', image: 'x', image_resource_url: 'https://cdn.example/img.png' } } } });
+    });
+    const out = await new EdenAiAdapter().generate({ provider, model, apiKey: 'k', prompt: 'a temple', settings: {}, fetchImpl });
+    expect(seenUrl).toBe('https://api.edenai.run/v3/universal-ai');
+    expect(seenBody.model).toBe('image/generation/ovhcloud/stable-diffusion-xl-base-v10');
+    expect(seenBody.text).toBe('a temple');
+    expect(seenBody.resolution).toBe('1024x1024');
+    expect(out[0].remoteUrl).toBe('https://cdn.example/img.png');
+  });
+  it('surfaces a nested provider failure with its real message', async () => {
+    const fetchImpl = fakeFetch(async () => res({ ctype: 'application/json', jsonBody: { results: { ovhcloud: { status: 'fail', message: 'provider exploded nicely' } } } }));
+    await expect(new EdenAiAdapter().generate({ provider, model, apiKey: 'k', prompt: 'x', settings: {}, fetchImpl }))
+      .rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
+  });
+});
+
+describe('nvidia adapter content filter', () => {
+  it('an artifact with empty base64 and finishReason CONTENT_FILTERED maps to CONTENT_FILTERED, not a format error', async () => {
+    const fetchImpl = fakeFetch(async () => res({ ctype: 'application/json', jsonBody: { artifacts: [{ base64: '', finishReason: 'CONTENT_FILTERED' }] } }));
+    await expect(new NvidiaAdapter().generate({
+      provider: { baseUrl: 'https://integrate.api.nvidia.com/v1' },
+      model: { vendorModelId: 'black-forest-labs/flux-3-image-klein' },
+      apiKey: 'k', prompt: 'a temple', settings: {}, fetchImpl,
+    })).rejects.toMatchObject({ code: 'CONTENT_FILTERED' });
   });
 });
 

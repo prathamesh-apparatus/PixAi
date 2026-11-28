@@ -57,6 +57,16 @@ class NvidiaAdapter extends BaseAdapter {
     const remote = (j.data && j.data[0] && j.data[0].url) || null;
     if (b64) return [{ buffer: Buffer.from(b64, 'base64'), format: 'png' }];
     if (remote) return [{ remoteUrl: remote, format: 'png' }];
+    // NVIDIA answers a blocked prompt with HTTP 200 and an artifact whose
+    // base64 is EMPTY and whose finishReason says why (e.g. CONTENT_FILTERED)
+    // — the model is fine, the prompt was refused. Say exactly that; the
+    // CONTENT_FILTERED code deliberately leaves the model's tested state
+    // untouched in the generation service.
+    const artifact = (j.artifacts && j.artifacts[0]) || null;
+    const finish = artifact && (artifact.finishReason || artifact.finish_reason);
+    if (finish && String(finish).toUpperCase() !== 'SUCCESS') {
+      throw new AdapterError(`NVIDIA's content filter blocked this prompt (finishReason: ${finish}). The model itself is working — try a different prompt.`, { code: 'CONTENT_FILTERED', diagnostic: JSON.stringify(j).slice(0, 200) });
+    }
     throw new AdapterError('NVIDIA returned a response without image data — the model response format is not supported yet.', { code: 'BAD_RESPONSE', diagnostic: JSON.stringify(j).slice(0, 200) });
   }
 

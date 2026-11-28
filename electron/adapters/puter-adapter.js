@@ -56,21 +56,23 @@ class PuterAdapter extends BaseAdapter {
     if (!apiKey) {
       throw new AdapterError('No Puter auth token saved. Puter uses your account token as the "API key" — re-import the workbook with the token filled in, or paste it in Settings.', { code: 'AUTH_FAILED' });
     }
+    // The envelope below is byte-for-byte what the official puter.js SDK
+    // sends (verified against @heyputer/puter.js source — its ai.test.js
+    // "pins the exact /drivers/call wire payload"): the token travels as
+    // `auth_token` IN THE BODY (there is no Authorization header), and the
+    // content type is the SDK's 'text/plain;actually=json'. The result of a
+    // successful call is a data-URI string.
     const body = {
       interface: 'puter-image-generation',
       driver: 'ai-image',
       test_mode: false,
       method: 'generate',
       args: { prompt, model: model.vendorModelId },
+      auth_token: apiKey,
     };
     const res = await fetchWithTimeout(fetchImpl, DRIVERS_CALL_URL, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        Origin: 'https://docs.puter.com',
-        Referer: 'https://docs.puter.com/',
-      },
+      headers: { 'Content-Type': 'text/plain;actually=json' },
       body: JSON.stringify(body),
     }, timeoutMs, signal);
     const text = await res.text();

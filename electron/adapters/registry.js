@@ -5,6 +5,7 @@ const { OpenAICompatibleAdapter } = require('./openai-compatible-adapter');
 const { NvidiaAdapter } = require('./nvidia-adapter');
 const { PollinationsAdapter } = require('./pollinations-adapter');
 const { PuterAdapter } = require('./puter-adapter');
+const { EdenAiAdapter } = require('./edenai-adapter');
 
 const ADAPTERS = {
   cloudflare: new CloudflareAdapter(),
@@ -13,6 +14,7 @@ const ADAPTERS = {
   nvidia: new NvidiaAdapter(),
   pollinations: new PollinationsAdapter(),
   puter: new PuterAdapter(),
+  edenai: new EdenAiAdapter(),
 };
 
 /**
@@ -27,9 +29,11 @@ function adapterForHost(url) {
   if (u.includes('openrouter.ai')) return 'openrouter';
   if (u.includes('ai.api.nvidia.com') || u.includes('integrate.api.nvidia.com')) return 'nvidia';
   if (u.includes('cloudflare.com')) return 'cloudflare';
-  // Eden AI's v3 API is OpenAI-compatible, images included:
-  // POST {baseUrl}/images/generations with model "provider/model".
-  if (u.includes('edenai.run')) return 'openai-compatible';
+  // Eden AI: the workbook's model strings are universal-ai strings
+  // ("image/generation/{provider}/{model}"), which the OpenAI-shaped
+  // /v3/images/generations route rejects — the dedicated adapter posts to
+  // /v3/universal-ai instead.
+  if (u.includes('edenai.run')) return 'edenai';
   if (u.includes('pollinations.ai')) return 'pollinations';
   if (u.includes('puter.com')) return 'puter';
   if (u.includes('api.openai.com')) return 'openai-compatible';
@@ -51,7 +55,7 @@ function resolveAdapter(provider) {
   if (/nvidia|nim\b/.test(raw)) return { adapterId: 'nvidia', supported: true, source: 'workbook' };
   if (/pollinations/.test(raw)) return { adapterId: 'pollinations', supported: true, source: 'workbook' };
   if (/puter/.test(raw)) return { adapterId: 'puter', supported: true, source: 'workbook' };
-  if (/edenai|eden\s*ai/.test(raw)) return { adapterId: 'openai-compatible', supported: true, source: 'workbook' };
+  if (/edenai|eden\s*ai/.test(raw)) return { adapterId: 'edenai', supported: true, source: 'workbook' };
   if (/openai/.test(raw)) return { adapterId: 'openai-compatible', supported: true, source: 'workbook' };
   return { adapterId: null, supported: false, source: null };
 }
